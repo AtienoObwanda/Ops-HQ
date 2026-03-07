@@ -2,6 +2,28 @@
 
 Railway runs your bot 24/7 so you don’t need to keep your laptop on. Free tier is enough for this app.
 
+## Dashboard (CS Command Center) — 3 steps
+
+1. **Add these files to your repo** (if not already there):
+   - `api.py`
+   - `frontend/index.html`
+   - `Procfile`
+   - `railway.toml`
+
+2. **Add these env vars in Railway** (Settings → Variables):
+   | Variable | Example |
+   |----------|---------|
+   | `ADMIN_EMAIL` | `atieno@credrails.com` |
+   | `ADMIN_PASSWORD` | your-secure-password |
+   | `COO_EMAIL` | `coo@credrails.com` |
+   | `COO_PASSWORD` | their-password |
+   | `DASHBOARD_PORT` | `5001` |
+
+3. **Push to GitHub** → Railway redeploys automatically.  
+   Dashboard will be live at **https://your-railway-url.railway.app**
+
+---
+
 ## 1. Push your code to GitHub
 
 If you haven’t already:
