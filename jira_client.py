@@ -196,6 +196,29 @@ def _hours_since(iso_str):
 
 # ── SUMMARY FOR BRIEF ─────────────────────────────────────────────────────────
 
+def get_grooming_tickets(max_results=80):
+    """
+    All open Jira tickets (not Done/Closed) for ticket grooming view.
+    Ordered by updated so backlog and in-progress items are visible.
+    """
+    if not is_configured():
+        return []
+
+    project_jql = " OR ".join(f'project = "{k}"' for k in JIRA_PROJECT_KEYS)
+    jql = (
+        f"({project_jql}) "
+        f"AND status NOT IN (Done, Closed, Resolved) "
+        f"{_created_since_jql()} "
+        f"ORDER BY updated DESC"
+    )
+    try:
+        issues = _jira_search_jql(jql, fields=["summary", "status", "assignee", "updated", "priority", "project"], max_results=max_results)
+        return [_parse_ticket(t) for t in issues]
+    except Exception as e:
+        print(f"⚠️  Jira grooming tickets error: {e}")
+        return []
+
+
 def get_jira_brief_data():
     """
     Returns everything the morning brief needs from Jira.

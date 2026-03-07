@@ -4,7 +4,7 @@ SQLite, zero infra. Just a file.
 """
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DB_PATH = os.environ.get("CS_BOT_DB", "cs_bot.db")
 
@@ -25,8 +25,10 @@ def init_db():
             client      TEXT NOT NULL,
             stage       TEXT NOT NULL DEFAULT 'Discovery',
             health      TEXT NOT NULL DEFAULT 'On Track',
-            owner_slack TEXT,          -- Slack user ID e.g. U0123ABC
+            owner_slack TEXT,          -- Slack user ID e.g. U0123ABC (engineer)
             owner_name  TEXT,
+            recon_slack TEXT,          -- Recon/QA specialist Slack ID
+            recon_name  TEXT,          -- Recon specialist display name
             go_live     TEXT,          -- ISO date string
             notes       TEXT,
             created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -73,6 +75,12 @@ def init_db():
             replied_at     TEXT
         );
         """)
+        # Migration: add recon columns if missing (existing DBs)
+        for col, typ in [("recon_slack", "TEXT"), ("recon_name", "TEXT")]:
+            try:
+                conn.execute(f"ALTER TABLE projects ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError:
+                pass
     print(f"✅ DB initialised at {DB_PATH}")
 
 
@@ -84,12 +92,12 @@ VALID_STAGES = [
 VALID_HEALTH = ["On Track", "At Risk", "Blocked"]
 
 
-def add_project(client, name, owner_slack=None, owner_name=None, go_live=None, stage="Discovery"):
+def add_project(client, name, owner_slack=None, owner_name=None, recon_slack=None, recon_name=None, go_live=None, stage="Discovery"):
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO projects (client, name, owner_slack, owner_name, go_live, stage)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (client, name, owner_slack, owner_name, go_live, stage)
+            """INSERT INTO projects (client, name, owner_slack, owner_name, recon_slack, recon_name, go_live, stage)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (client, name, owner_slack, owner_name, recon_slack, recon_name, go_live, stage)
         )
         return cur.lastrowid
 
@@ -143,7 +151,7 @@ def at_risk_projects():
 
 
 def update_project(project_id, **kwargs):
-    allowed = {"stage", "health", "notes", "owner_slack", "owner_name", "go_live", "name", "client"}
+    allowed = {"stage", "health", "notes", "owner_slack", "owner_name", "recon_slack", "recon_name", "go_live", "name", "client"}
     updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
     if not updates:
         return
@@ -271,4 +279,42 @@ def reflections_this_week():
                WHERE julianday('now') - julianday(date) <= 7
                ORDER BY date DESC"""
         ).fetchall()
-# Note: reflections table is created via init_db — add it if missing
+
+
+def monthly_summary(days=30):
+    """
+    For end-of-month view: shipped (Done projects), resolved issues, open issues logged, blockers from reflections.
+    Returns counts and lists for the last N days.
+    """
+    with get_conn() as conn:
+        since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        done_projects = conn.execute(
+            """SELECT id, client, name, updated_at FROM projects
+               WHERE stage = 'Done' AND date(updated_at) >= ? ORDER BY updated_at DESC""",
+            (since,),
+        ).fetchall()
+        resolved = conn.execute(
+            """SELECT i.id, i.title, i.category, i.resolved_at, p.client FROM issues i
+               LEFT JOIN projects p ON i.project_id = p.id
+               WHERE i.resolved_at IS NOT NULL AND date(i.resolved_at) >= ?
+               ORDER BY i.resolved_at DESC""",
+            (since,),
+        ).fetchall()
+        opened = conn.execute(
+            """SELECT i.id, i.title, i.category, i.created_at, p.client FROM issues i
+               LEFT JOIN projects p ON i.project_id = p.id
+               WHERE date(i.created_at) >= ? ORDER BY i.created_at DESC""",
+            (since,),
+        ).fetchall()
+        reflections_with_blockers = conn.execute(
+            """SELECT date, blockers, wins FROM reflections
+               WHERE date >= ? AND (blockers IS NOT NULL AND blockers != '') ORDER BY date DESC""",
+            (since,),
+        ).fetchall()
+    return {
+        "days": days,
+        "shipped": [dict(p) for p in done_projects],
+        "resolved_issues": [dict(r) for r in resolved],
+        "issues_logged": [dict(o) for o in opened],
+        "blockers_from_reflections": [dict(r) for r in reflections_with_blockers],
+    }

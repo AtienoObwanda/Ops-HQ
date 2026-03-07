@@ -124,6 +124,8 @@ def create_project():
         name=data.get("name", data["client"]),
         owner_slack=data.get("owner_slack"),
         owner_name=data.get("owner_name"),
+        recon_slack=data.get("recon_slack"),
+        recon_name=data.get("recon_name"),
         go_live=data.get("go_live"),
         stage=data.get("stage", "Discovery"),
     )
@@ -195,6 +197,23 @@ def get_brief():
 
 
 # ── ISSUES ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/summary/monthly", methods=["GET"])
+@_require_auth()
+def get_monthly_summary():
+    """End-of-month: what was shipped, resolved, issues logged, blockers."""
+    days = int(request.args.get("days", 30))
+    data = db.monthly_summary(days=days)
+    return jsonify(data)
+
+
+@app.route("/api/jira/grooming", methods=["GET"])
+@_require_auth()
+def jira_grooming():
+    """All open Jira tickets for ticket-grooming view (delegation/assignment)."""
+    tickets = jira.get_grooming_tickets()
+    return jsonify({"configured": jira.is_configured(), "tickets": tickets})
+
 
 @app.route("/api/issues", methods=["GET"])
 @_require_auth()

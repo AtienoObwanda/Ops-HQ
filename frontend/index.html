@@ -640,6 +640,13 @@
   .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   .empty-state { color: var(--muted); font-size: 13px; font-family: var(--mono); padding: 20px 0; }
 
+  .grooming-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .grooming-table th, .grooming-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .grooming-table th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .grooming-table .jira-key { color: var(--accent2); text-decoration: none; }
+  .grooming-table .jira-key:hover { text-decoration: underline; }
+  .placeholder-card { border-style: dashed; opacity: 0.9; }
+
   .health-dot {
     width: 8px; height: 8px;
     border-radius: 50%;
@@ -685,11 +692,17 @@
     <div class="nav-item" onclick="nav('pipeline')" id="nav-pipeline">
       <span class="nav-icon">📋</span> Pipeline
     </div>
+    <div class="nav-item" onclick="nav('grooming')" id="nav-grooming">
+      <span class="nav-icon">🎫</span> Ticket Grooming
+    </div>
     <div class="nav-item" onclick="nav('workload')" id="nav-workload">
       <span class="nav-icon">👥</span> Team Workload
     </div>
     <div class="nav-item" onclick="nav('issues')" id="nav-issues">
       <span class="nav-icon">🐛</span> Issues
+    </div>
+    <div class="nav-item" onclick="nav('docket')" id="nav-docket">
+      <span class="nav-icon">📌</span> My Docket
     </div>
     <div class="nav-item" onclick="nav('goals')" id="nav-goals">
       <span class="nav-icon">🎯</span> Team Goals
@@ -756,12 +769,57 @@
       </div>
     </div>
 
+    <!-- TICKET GROOMING (Jira) -->
+    <div class="page" id="page-grooming">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Ticket Grooming</div>
+          <div class="page-sub">All Jira tickets — ownership and status at a glance</div>
+        </div>
+        <button class="btn-sm accent" onclick="loadGrooming()">↻ Refresh</button>
+      </div>
+      <div class="card">
+        <div id="grooming-list"></div>
+      </div>
+    </div>
+
     <!-- WORKLOAD -->
     <div class="page" id="page-workload">
       <div class="page-header">
         <div class="page-title">Team Workload</div>
       </div>
       <div id="workload-list"></div>
+    </div>
+
+    <!-- MY DOCKET -->
+    <div class="page" id="page-docket">
+      <div class="page-header">
+        <div>
+          <div class="page-title">My Docket</div>
+          <div class="page-sub">Everything in one place — brief, pipeline, calendar, live accounts</div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">📋 At a glance</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Morning brief summary and pipeline snapshot. Use the Brief and Pipeline pages for full detail.</p>
+          <button class="btn-sm accent" onclick="nav('brief')">Open Brief</button>
+          <button class="btn-sm" style="margin-left:8px" onclick="nav('pipeline')">Open Pipeline</button>
+        </div>
+        <div class="card placeholder-card">
+          <div class="card-title">📅 Calendar</div>
+          <p style="font-size:13px;color:var(--muted);">Coming soon — your calendar in one view.</p>
+        </div>
+        <div class="card placeholder-card">
+          <div class="card-title">🟢 Live account monitoring</div>
+          <p style="font-size:13px;color:var(--muted);">Coming soon — catch issues on time for live accounts.</p>
+        </div>
+        <div class="card" style="grid-column:1/-1">
+          <div class="card-title">📊 Monthly summary (last 30 days)</div>
+          <div class="page-sub" style="margin-bottom:12px">What was shipped, resolved, issues logged, blockers</div>
+          <div id="monthly-summary"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ISSUES -->
@@ -852,8 +910,12 @@
       <input class="form-input" id="pm-name" placeholder="e.g. Recon Integration" />
     </div>
     <div class="form-field">
-      <label class="form-label">Owner</label>
+      <label class="form-label">Owner (engineer)</label>
       <input class="form-input" id="pm-owner" placeholder="Engineer name" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Recon specialist</label>
+      <input class="form-input" id="pm-recon" placeholder="Recon/QA name (optional)" />
     </div>
     <div class="form-field">
       <label class="form-label">Stage</label>
@@ -899,6 +961,24 @@
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('issue-modal')">Cancel</button>
       <button class="btn-accent" onclick="submitIssue()">Log Issue</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROJECT DETAIL MODAL (updates + status) -->
+<div class="modal-overlay" id="project-detail-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title" id="pd-title">Project</div>
+    <div id="pd-meta" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div class="card-title" style="margin-bottom:8px">Status updates</div>
+    <div id="pd-updates" style="max-height:200px;overflow-y:auto;margin-bottom:12px;"></div>
+    <div class="form-field">
+      <label class="form-label">Post update</label>
+      <textarea class="form-textarea" id="pd-update-content" placeholder="What's the status? (engineers share progress here)" rows="2"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('project-detail-modal')">Close</button>
+      <button class="btn-accent" onclick="submitProjectUpdate()">Post update</button>
     </div>
   </div>
 </div>
@@ -1013,7 +1093,9 @@ function nav(page) {
   const loaders = {
     brief:    loadBrief,
     pipeline: loadPipeline,
+    grooming: loadGrooming,
     workload: loadWorkload,
+    docket:   loadDocket,
     issues:   loadIssues,
     goals:    loadGoals,
     ai:       loadAITools,
@@ -1130,7 +1212,7 @@ async function loadPipeline() {
       ${byStage[stage].map(p => `
         <div class="pipeline-item" onclick="openProjectDetail(${p.id})">
           <div>${p.client}</div>
-          <div class="pipeline-item-owner">${p.owner_name || "—"}</div>
+          <div class="pipeline-item-owner">${p.owner_name || "—"}${p.recon_name ? " · Recon: " + p.recon_name : ""}</div>
           ${p.health !== "On Track" ? `<div style="margin-top:4px"><span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span></div>` : ""}
         </div>
       `).join("")}
@@ -1149,12 +1231,57 @@ async function loadPipeline() {
           <span class="health-dot dot-${HEALTH_COLORS[p.health]==='green'?'green':HEALTH_COLORS[p.health]==='warn'?'warn':'danger'}"></span>
           <span class="project-client">${p.client}</span>
           <span class="project-stage">${STAGE_EMOJI[p.stage]||''} ${p.stage}</span>
-          <span class="project-owner">${p.owner_name || "—"}</span>
+          <span class="project-owner">${p.owner_name || "—"}${p.recon_name ? " · " + p.recon_name : ""}</span>
           <span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span>
           ${p.go_live ? `<span style="font-size:11px;color:var(--muted);font-family:var(--mono)">🗓 ${p.go_live}</span>` : ""}
         </div>
       `).join("")
     : `<div class="empty-state">No projects yet. Click "+ Add Project" to start.</div>`;
+}
+
+// ── TICKET GROOMING (Jira) ────────────────────────────────────────────────────
+async function loadGrooming() {
+  const data = await api("GET", "/api/jira/grooming");
+  if (!data) return;
+  const el = document.getElementById("grooming-list");
+  if (!data.configured) {
+    el.innerHTML = `<div class="empty-state">Jira not configured. Set JIRA_* env vars to see tickets here.</div>`;
+    return;
+  }
+  const tickets = data.tickets || [];
+  el.innerHTML = tickets.length
+    ? `<table class="grooming-table"><thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Updated</th></tr></thead><tbody>${
+        tickets.map(t => `
+          <tr>
+            <td><a href="${t.url}" target="_blank" rel="noopener" class="jira-key">${t.key}</a></td>
+            <td class="jira-summary">${t.summary}</td>
+            <td><span class="tag tag-gray">${t.status}</span></td>
+            <td>${t.assignee || "—"}</td>
+            <td style="font-size:11px;color:var(--muted);font-family:var(--mono)">${t.updated ? t.updated.slice(0,10) : "—"}</td>
+          </tr>
+        `).join("")
+      }</tbody></table>`
+    : `<div class="empty-state">No open Jira tickets in configured projects.</div>`;
+}
+
+async function loadDocket() {
+  const data = await api("GET", "/api/summary/monthly?days=30");
+  if (!data) return;
+  const el = document.getElementById("monthly-summary");
+  const s = data.shipped || [];
+  const res = data.resolved_issues || [];
+  const opened = data.issues_logged || [];
+  const blockers = data.blockers_from_reflections || [];
+  el.innerHTML = `
+    <div class="grid-2" style="gap:16px;margin-top:8px">
+      <div><strong>Shipped (Done)</strong> ${s.length}</div>
+      <div><strong>Issues resolved</strong> ${res.length}</div>
+      <div><strong>Issues logged</strong> ${opened.length}</div>
+      <div><strong>Blockers (reflections)</strong> ${blockers.length}</div>
+    </div>
+    ${s.length ? `<div style="margin-top:12px"><strong>Projects moved to Done:</strong> ${s.map(p => p.client).join(", ") || "—"}</div>` : ""}
+    ${blockers.length ? `<div style="margin-top:8px;font-size:12px;color:var(--muted)">Blockers from reflections: ${blockers.map(r => r.date + ": " + (r.blockers || "").slice(0,80)).join("; ")}</div>` : ""}
+  `;
 }
 
 // ── WORKLOAD ──────────────────────────────────────────────────────────────────
@@ -1310,6 +1437,7 @@ async function submitProject() {
     client,
     name:       document.getElementById("pm-name").value || client,
     owner_name: document.getElementById("pm-owner").value,
+    recon_name: document.getElementById("pm-recon").value || null,
     stage:      document.getElementById("pm-stage").value,
     go_live:    document.getElementById("pm-golive").value || null,
   });
@@ -1351,13 +1479,41 @@ document.querySelectorAll(".modal-overlay").forEach(overlay => {
   });
 });
 
-// ── PROJECT DETAIL (simple inline modal) ─────────────────────────────────────
+// ── PROJECT DETAIL (updates + status) ─────────────────────────────────────────
+let _currentProjectId = null;
 async function openProjectDetail(pid) {
   const data = await api("GET", `/api/projects/${pid}`);
   if (!data) return;
   const p = data.project;
-  // For now just show an alert — Phase 3 will have a full detail panel
-  showToast(`${p.client} · ${p.stage} · ${p.health}`);
+  const updates = data.updates || [];
+  _currentProjectId = pid;
+  document.getElementById("pd-title").textContent = p.client + (p.name && p.name !== p.client ? " — " + p.name : "");
+  document.getElementById("pd-meta").innerHTML = [
+    p.stage ? `${STAGE_EMOJI[p.stage] || ""} ${p.stage}` : "",
+    p.health ? ` · ${p.health}` : "",
+    p.owner_name ? ` · Owner: ${p.owner_name}` : "",
+    p.recon_name ? ` · Recon: ${p.recon_name}` : "",
+  ].filter(Boolean).join(" ");
+  document.getElementById("pd-updates").innerHTML = updates.length
+    ? updates.map(u => `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">${escapeHtml(u.content)}<br><span style="font-size:11px;color:var(--muted)">${u.author_name || "—"} · ${(u.created_at || "").slice(0,16)}</span></div>`).join("")
+    : "<div class=\"empty-state\">No updates yet. Post one below.</div>";
+  document.getElementById("pd-update-content").value = "";
+  document.getElementById("project-detail-modal").classList.add("open");
+}
+function escapeHtml(s) {
+  if (!s) return "";
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+async function submitProjectUpdate() {
+  if (!_currentProjectId) return;
+  const content = document.getElementById("pd-update-content").value.trim();
+  if (!content) return;
+  await api("POST", `/api/projects/${_currentProjectId}/updates`, { content });
+  showToast("Update posted");
+  document.getElementById("pd-update-content").value = "";
+  openProjectDetail(_currentProjectId);
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
