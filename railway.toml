@@ -3,5 +3,5 @@ builder = "nixpacks"
 
 [deploy]
 startCommand = "python api.py & python bot.py"
-healthcheckPath = "/api/auth/me"
+healthcheckPath = "/health"
 restartPolicyType = "on_failure"

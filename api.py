@@ -74,6 +74,11 @@ def _require_auth(roles=None):
     return decorator
 
 
+@app.route("/health")
+def health():
+    return "ok", 200
+
+
 @app.route("/api/auth/login", methods=["POST"])
 def login():
     data = request.json or {}
