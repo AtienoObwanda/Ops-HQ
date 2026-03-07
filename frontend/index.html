@@ -1145,7 +1145,8 @@
       <select class="form-select" id="ru-engineer">
         <option value="">Select engineer...</option>
       </select>
-      <p style="font-size:11px;color:var(--muted);margin-top:6px">Jira and Slack names don’t need to match — set JIRA_TO_SLACK in env.</p>
+      <p id="ru-engineer-hint" style="font-size:11px;color:var(--muted);margin-top:6px">Map Jira name → Slack in <code>JIRA_TO_SLACK</code>: <code>JiraName:SlackUserID:SlackName</code>. Get Slack ID from profile → Copy member ID.</p>
+      <p id="ru-engineer-empty" style="font-size:12px;color:var(--warn);margin-top:8px;display:none">No engineers in list. Add <code>JIRA_TO_SLACK</code> to your .env (or Railway variables), e.g. <code>Felix:U01234ABC:Kolakodhek,Millicent:U05678DEF:Atieno</code>, then refresh the page.</p>
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('request-update-modal')">Cancel</button>
@@ -1610,8 +1611,15 @@ function openRequestUpdateModal(ticketKey) {
   window._ruTicket = t;
   document.getElementById("ru-ticket-info").textContent = `${t.key}: ${t.summary || "—"}`;
   const sel = document.getElementById("ru-engineer");
-  sel.innerHTML = `<option value="">Select engineer...</option>` +
-    _groomingEngineers.map(e => `<option value="${e.slack_id}">${e.jira_name} (${e.slack_name})</option>`).join("");
+  const emptyEl = document.getElementById("ru-engineer-empty");
+  if (_groomingEngineers.length === 0) {
+    sel.innerHTML = `<option value="">— No engineers configured —</option>`;
+    if (emptyEl) emptyEl.style.display = "block";
+  } else {
+    sel.innerHTML = `<option value="">Select engineer...</option>` +
+      _groomingEngineers.map(e => `<option value="${e.slack_id}">${e.jira_name} (${e.slack_name})</option>`).join("");
+    if (emptyEl) emptyEl.style.display = "none";
+  }
   document.getElementById("request-update-modal").classList.add("open");
 }
 
