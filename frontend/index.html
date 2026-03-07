@@ -725,6 +725,9 @@
     <div class="nav-item" onclick="nav('pipeline')" id="nav-pipeline">
       <span class="nav-icon">📋</span> Pipeline
     </div>
+    <div class="nav-item" onclick="nav('clients')" id="nav-clients">
+      <span class="nav-icon">🏢</span> Clients
+    </div>
     <div class="nav-item" onclick="nav('grooming')" id="nav-grooming">
       <span class="nav-icon">🎫</span> Ticket Grooming
     </div>
@@ -802,6 +805,26 @@
       <div class="card">
         <div class="card-title">All Projects</div>
         <div id="project-list"></div>
+      </div>
+    </div>
+
+    <!-- CLIENTS -->
+    <div class="page" id="page-clients">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Clients</div>
+          <div class="page-sub">Add clients online; track issues and reports per client. Monitor each morning.</div>
+        </div>
+        <button class="btn-sm accent" onclick="openAddClient()">+ Add client</button>
+      </div>
+      <div class="card">
+        <div class="card-title">All clients</div>
+        <div id="clients-list"></div>
+      </div>
+      <div class="card" id="client-monitor-card" style="margin-top:16px">
+        <div class="card-title">🌅 Morning monitor</div>
+        <div class="page-sub" style="margin-bottom:10px">Track and log issues per client. Reports are generated from their tickets and issues.</div>
+        <div id="client-monitor-list"></div>
       </div>
     </div>
 
@@ -934,9 +957,9 @@
 
         <div class="card">
           <div class="card-title">📧 Client Update Drafter</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Select a project — AI drafts the status email. You edit the top 2 lines and send.</p>
-          <select class="form-select" id="cu-project-select">
-            <option value="">Select project...</option>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Select a <strong>client</strong> — AI drafts the status email from their projects and issues. You edit the top 2 lines and send.</p>
+          <select class="form-select" id="cu-client-select">
+            <option value="">Select client...</option>
           </select>
           <button class="btn-accent" style="margin-top:10px;width:100%;" onclick="generateClientUpdate()">Generate Draft</button>
           <div class="ai-output" id="cu-output" style="display:none;"></div>
@@ -967,13 +990,35 @@
   </main>
 </div>
 
+<!-- ADD CLIENT MODAL -->
+<div class="modal-overlay" id="client-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title">Add client</div>
+    <div class="form-field">
+      <label class="form-label">Client name</label>
+      <input class="form-input" id="cm-name" placeholder="e.g. Equity Bank" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Notes (optional)</label>
+      <textarea class="form-textarea" id="cm-notes" rows="2" placeholder="Contact, context..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('client-modal')">Cancel</button>
+      <button class="btn-accent" onclick="submitClient()">Add client</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROJECT MODAL -->
 <div class="modal-overlay" id="project-modal">
   <div class="modal">
     <div class="modal-title">Add Project</div>
     <div class="form-field">
-      <label class="form-label">Client Name</label>
-      <input class="form-input" id="pm-client" placeholder="e.g. Equity Bank" />
+      <label class="form-label">Client</label>
+      <select class="form-select" id="pm-client-select">
+        <option value="">— Or type below —</option>
+      </select>
+      <input class="form-input" id="pm-client" placeholder="e.g. Equity Bank (or pick above)" style="margin-top:6px" />
     </div>
     <div class="form-field">
       <label class="form-label">Project Name</label>
@@ -1009,6 +1054,12 @@
 <div class="modal-overlay" id="issue-modal">
   <div class="modal">
     <div class="modal-title">Log Issue</div>
+    <div class="form-field">
+      <label class="form-label">Client (optional)</label>
+      <select class="form-select" id="im-client-select">
+        <option value="">—</option>
+      </select>
+    </div>
     <div class="form-field">
       <label class="form-label">Issue Title</label>
       <input class="form-input" id="im-title" placeholder="e.g. Client API keys not received" />
@@ -1221,6 +1272,7 @@ function nav(page) {
   const loaders = {
     brief:    loadBrief,
     pipeline: loadPipeline,
+    clients:  loadClients,
     grooming: loadGrooming,
     workload: loadWorkload,
     docket:   loadDocket,
@@ -1322,9 +1374,79 @@ async function loadBrief() {
     `).join("") || `<div class="empty-state">No projects yet</div>`;
 }
 
+// ── CLIENTS ──────────────────────────────────────────────────────────────────
+async function loadClients() {
+  const clients = await api("GET", "/api/clients");
+  if (!clients) return;
+  const listEl = document.getElementById("clients-list");
+  const monEl = document.getElementById("client-monitor-list");
+  listEl.innerHTML = clients.length
+    ? clients.map(c => `
+        <div class="project-row" style="cursor:pointer" onclick="openClientDetail(${c.id})">
+          <span class="project-client">${c.name}</span>
+          <span><button type="button" class="btn-sm accent" onclick="event.stopPropagation();generateClientUpdateForClient(${c.id})">Draft update</button></span>
+        </div>
+      `).join("")
+    : `<div class="empty-state">No clients yet. Click "+ Add client" to add one.</div>`;
+  monEl.innerHTML = clients.length
+    ? clients.map(c => `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"><span>${c.name}</span><a href="#" onclick="nav('clients');openClientDetail(${c.id});return false" style="font-size:12px;color:var(--accent)">View & log issues</a></div>`).join("")
+    : `<div class="empty-state">Add clients to monitor them here.</div>`;
+}
+
+function openAddClient() {
+  document.getElementById("cm-name").value = "";
+  document.getElementById("cm-notes").value = "";
+  document.getElementById("client-modal").classList.add("open");
+}
+
+async function submitClient() {
+  const name = document.getElementById("cm-name").value.trim();
+  if (!name) return;
+  await api("POST", "/api/clients", { name, notes: document.getElementById("cm-notes").value.trim() || null });
+  closeModal("client-modal");
+  showToast(`${name} added`);
+  loadClients();
+  loadPipeline();
+  loadAITools();
+}
+
+async function openClientDetail(cid) {
+  const data = await api("GET", `/api/clients/${cid}`);
+  if (!data) return;
+  const c = data.client;
+  const projects = data.projects || [];
+  const issues = data.issues || [];
+  const openIssues = issues.filter(i => i.status === "open");
+  const reportUrl = `#report-${cid}`;
+  const msg = `Client: ${c.name}\nProjects: ${projects.length}\nOpen issues: ${openIssues.length}\n\nReport: /api/clients/${cid}/report`;
+  showToast(`${c.name}: ${projects.length} projects, ${openIssues.length} open issues`);
+  document.getElementById("clients-list").innerHTML += `
+    <div class="card" id="client-detail-${cid}" style="margin-top:12px;display:block">
+      <div class="card-title">${c.name}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Projects: ${projects.length} · Open issues: ${openIssues.length}</div>
+      <div style="margin-bottom:8px">${projects.map(p => `<span class="tag tag-gray" style="margin-right:6px">${p.name || p.client}</span>`).join("")}</div>
+      <div style="font-size:12px">${openIssues.slice(0, 5).map(i => `<div style="padding:4px 0">${i.title} <span class="tag" style="font-size:10px">${i.category}</span></div>`).join("") || "No open issues"}</div>
+      <button type="button" class="btn-sm accent" style="margin-top:10px" onclick="generateClientUpdateForClient(${cid})">Generate client update draft</button>
+    </div>`;
+  setTimeout(() => document.getElementById(`client-detail-${cid}`)?.scrollIntoView({ behavior: "smooth" }), 100);
+}
+
+async function generateClientUpdateForClient(cid) {
+  const out = document.getElementById("cu-output");
+  if (out) {
+    out.style.display = "block";
+    out.innerHTML = `<span class="ai-loading">✦ Drafting...</span>`;
+    const data = await api("POST", `/api/ai/clientupdate/client/${cid}`);
+    out.innerHTML = data?.draft || data?.error || "Error.";
+  } else {
+    const data = await api("POST", `/api/ai/clientupdate/client/${cid}`);
+    showToast(data?.draft ? "Draft ready — open AI Tools to see it" : (data?.error || "Error"));
+  }
+}
+
 // ── PIPELINE ──────────────────────────────────────────────────────────────────
 async function loadPipeline() {
-  const projects = await api("GET", "/api/projects");
+  const [projects, clients] = await Promise.all([api("GET", "/api/projects"), api("GET", "/api/clients")]);
   if (!projects) return;
 
   const stages = ["Discovery","Config","Integration","UAT","Go-Live","Hypercare"];
@@ -1348,10 +1470,12 @@ async function loadPipeline() {
     </div>
   `).join("");
 
-  // Also populate project select in AI tools
-  const sel = document.getElementById("cu-project-select");
-  sel.innerHTML = `<option value="">Select project...</option>` +
-    projects.map(p => `<option value="${p.id}">${p.client}</option>`).join("");
+  // Populate client dropdown in project modal
+  const clientSel = document.getElementById("pm-client-select");
+  if (clientSel && clients) {
+    clientSel.innerHTML = `<option value="">— Or type below —</option>` +
+      clients.map(c => `<option value="${c.id}" data-name="${(c.name || "").replace(/"/g, "&quot;")}">${c.name}</option>`).join("");
+  }
 
   // Table
   document.getElementById("project-list").innerHTML = projects.length
@@ -1670,16 +1794,21 @@ async function updateGoalProgress(id, value) {
 
 // ── AI TOOLS ──────────────────────────────────────────────────────────────────
 async function loadAITools() {
-  await loadPipeline(); // populate project dropdown
+  const clients = await api("GET", "/api/clients");
+  const sel = document.getElementById("cu-client-select");
+  if (sel) {
+    sel.innerHTML = `<option value="">Select client...</option>` +
+      (clients || []).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+  }
 }
 
 async function generateClientUpdate() {
-  const pid = document.getElementById("cu-project-select").value;
-  if (!pid) { showToast("Select a project first"); return; }
+  const cid = document.getElementById("cu-client-select").value;
+  if (!cid) { showToast("Select a client first"); return; }
   const out = document.getElementById("cu-output");
   out.style.display = "block";
   out.innerHTML = `<span class="ai-loading">✦ Drafting client update...</span>`;
-  const data = await api("POST", `/api/ai/clientupdate/${pid}`);
+  const data = await api("POST", `/api/ai/clientupdate/client/${cid}`);
   out.innerHTML = data?.draft || data?.error || "Error generating draft.";
 }
 

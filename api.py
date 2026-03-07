@@ -119,15 +119,23 @@ def get_projects():
 @_require_auth(roles=["admin", "engineer"])
 def create_project():
     data = request.json or {}
+    client_id = data.get("client_id")
+    client = data.get("client")
+    if client_id and not client:
+        c = db.get_client(client_id)
+        client = c["name"] if c else None
+    if not client:
+        return jsonify({"error": "client or client_id required"}), 400
     pid = db.add_project(
-        client=data["client"],
-        name=data.get("name", data["client"]),
+        client=client,
+        name=data.get("name", client),
         owner_slack=data.get("owner_slack"),
         owner_name=data.get("owner_name"),
         recon_slack=data.get("recon_slack"),
         recon_name=data.get("recon_name"),
         go_live=data.get("go_live"),
         stage=data.get("stage", "Discovery"),
+        client_id=client_id,
     )
     return jsonify({"id": pid}), 201
 
@@ -168,6 +176,81 @@ def add_update(pid):
         return jsonify({"error": "content required"}), 400
     db.add_update(pid, content, author_name=request.user.get("name"))
     return jsonify({"ok": True}), 201
+
+
+# ── CLIENTS ───────────────────────────────────────────────────────────────────
+
+@app.route("/api/clients", methods=["GET"])
+@_require_auth()
+def get_clients():
+    clients = db.all_clients()
+    return jsonify([dict(c) for c in clients])
+
+
+@app.route("/api/clients", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def create_client():
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    try:
+        cid = db.add_client(name=name, notes=(data.get("notes") or "").strip() or None)
+        return jsonify({"id": cid}), 201
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            return jsonify({"error": "Client name already exists"}), 409
+        raise
+
+
+@app.route("/api/clients/<int:cid>", methods=["GET"])
+@_require_auth()
+def get_client(cid):
+    client = db.get_client(cid)
+    if not client:
+        return jsonify({"error": "Not found"}), 404
+    projects = db.get_projects_for_client(cid)
+    issues = db.get_issues_for_client(cid)
+    return jsonify({
+        "client": dict(client),
+        "projects": [dict(p) for p in projects],
+        "issues": [dict(i) for i in issues],
+    })
+
+
+@app.route("/api/clients/<int:cid>", methods=["PATCH"])
+@_require_auth(roles=["admin", "engineer"])
+def update_client(cid):
+    data = request.json or {}
+    db.update_client(cid, **data)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/clients/<int:cid>", methods=["DELETE"])
+@_require_auth(roles=["admin", "engineer"])
+def delete_client(cid):
+    db.delete_client(cid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/clients/<int:cid>/report", methods=["GET"])
+@_require_auth()
+def client_report(cid):
+    """Dynamic report for client: projects, issues, and ticket performance (for sales/product summaries)."""
+    client = db.get_client(cid)
+    if not client:
+        return jsonify({"error": "Not found"}), 404
+    projects = db.get_projects_for_client(cid)
+    issues = db.get_issues_for_client(cid)
+    open_issues = [i for i in issues if i.get("status") == "open"]
+    resolved = [i for i in issues if i.get("resolved_at")]
+    return jsonify({
+        "client": dict(client),
+        "projects": [dict(p) for p in projects],
+        "issues": [dict(i) for i in issues],
+        "open_count": len(open_issues),
+        "resolved_count": len(resolved),
+    })
 
 
 # ── BRIEF ─────────────────────────────────────────────────────────────────────
@@ -295,6 +378,7 @@ def create_issue():
         category=data["category"],
         description=data.get("description"),
         project_id=data.get("project_id"),
+        client_id=data.get("client_id"),
         reported_by=request.user.get("name"),
     )
     return jsonify({"id": iid}), 201
@@ -348,15 +432,40 @@ def update_goal(gid):
 @app.route("/api/ai/clientupdate/<int:pid>", methods=["POST"])
 @_require_auth(roles=["admin"])
 def ai_client_update(pid):
+    """Generate status email draft for a single project (by project id)."""
     project = db.get_project(pid)
     if not project:
         return jsonify({"error": "Not found"}), 404
     try:
         recent_updates = db.recent_updates(pid, limit=5)
-        open_issues    = db.open_issues(limit=5)
+        open_issues    = db.open_issues(limit=50)
+        project_issues = [dict(i) for i in open_issues if i.get("project_id") == pid]
         draft = ai.generate_client_update(
             dict(project),
             [dict(u) for u in recent_updates],
+            project_issues,
+        )
+        return jsonify({"draft": draft})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ai/clientupdate/client/<int:cid>", methods=["POST"])
+@_require_auth(roles=["admin"])
+def ai_client_update_by_client(cid):
+    """Generate status email draft for a client — aggregates their projects and issues. Select client, AI drafts; you edit top 2 lines and send."""
+    client = db.get_client(cid)
+    if not client:
+        return jsonify({"error": "Not found"}), 404
+    projects = db.get_projects_for_client(cid)
+    issues = db.get_issues_for_client(cid)
+    open_issues = [i for i in issues if i.get("status") == "open"]
+    if not projects:
+        return jsonify({"error": "No projects linked to this client"}), 400
+    try:
+        draft = ai.generate_client_update_for_client(
+            dict(client),
+            [dict(p) for p in projects],
             [dict(i) for i in open_issues],
         )
         return jsonify({"draft": draft})

@@ -75,6 +75,36 @@ Write the email now. Subject line first, then body."""
     return _call(system, user, max_tokens=500)
 
 
+def generate_client_update_for_client(client, projects, open_issues):
+    """
+    Drafts one client-facing status email for the whole client (all their projects + issues).
+    For sales/product summaries tied to ticket performance.
+    """
+    system = """You are a senior delivery manager at a fintech company writing professional 
+client status update emails. Your tone is confident, clear, and reassuring — never vague, 
+never over-promising. You write in plain English, no jargon. Keep it under 250 words.
+Structure: brief status summary for this client → what's happening across their work → next milestones → any action needed from client.
+Do NOT use bullet points. Write in flowing paragraphs. Sign off as 'Atieno'."""
+
+    proj_lines = []
+    for p in projects:
+        proj_lines.append(f"- {p.get('name', p.get('client', ''))}: stage {p.get('stage', '')}, health {p.get('health', '')}, go-live {p.get('go_live') or 'TBD'}")
+    issues_text = "\n".join([f"- [{i.get('category', '')}] {i.get('title', '')}" for i in open_issues]) or "No open issues."
+
+    user = f"""Write a client status update email for:
+
+Client: {client.get('name', '')}
+Their projects:
+{chr(10).join(proj_lines)}
+
+Open issues (internal — reflect in tone/next steps, don't list specifics):
+{issues_text}
+
+Write the email now. Subject line first, then body."""
+
+    return _call(system, user, max_tokens=600)
+
+
 # ── WEEKLY PATTERN DIGEST ─────────────────────────────────────────────────────
 
 def generate_pattern_digest(issue_patterns, recent_reflections, stale_projects, at_risk_projects):
