@@ -1,5 +1,5 @@
 """
-Ops Brain - Database Layer
+CS Bot - Database Layer
 SQLite, zero infra. Just a file.
 """
 import sqlite3
@@ -23,7 +23,7 @@ def init_db():
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL,
             client      TEXT NOT NULL,
-            stage       TEXT NOT NULL DEFAULT 'Coming Soon',
+            stage       TEXT NOT NULL DEFAULT 'Discovery',
             health      TEXT NOT NULL DEFAULT 'On Track',
             owner_slack TEXT,          -- Slack user ID e.g. U0123ABC
             owner_name  TEXT,
@@ -72,14 +72,6 @@ def init_db():
             sent_at        TEXT NOT NULL DEFAULT (datetime('now')),
             replied_at     TEXT
         );
-
-        CREATE TABLE IF NOT EXISTS brain_dumps (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            author_slack TEXT NOT NULL,
-            author_name  TEXT,
-            content      TEXT NOT NULL,
-            created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-        );
         """)
     print(f"✅ DB initialised at {DB_PATH}")
 
@@ -87,13 +79,12 @@ def init_db():
 # ── PROJECTS ──────────────────────────────────────────────────────────────────
 
 VALID_STAGES = [
-    "Coming Soon", "Requirement Gathering", "Ticket Grooming", "To Do",
-    "In Progress", "Internal User Testing", "Customer Testing", "Done",
+    "Discovery", "Config", "Integration", "UAT", "Go-Live", "Hypercare", "Done"
 ]
 VALID_HEALTH = ["On Track", "At Risk", "Blocked"]
 
 
-def add_project(client, name, owner_slack=None, owner_name=None, go_live=None, stage="Coming Soon"):
+def add_project(client, name, owner_slack=None, owner_name=None, go_live=None, stage="Discovery"):
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO projects (client, name, owner_slack, owner_name, go_live, stage)
@@ -148,15 +139,6 @@ def at_risk_projects():
             """SELECT * FROM projects
                WHERE health IN ('At Risk', 'Blocked') AND stage != 'Done'
                ORDER BY health DESC, updated_at ASC"""
-        ).fetchall()
-
-
-def projects_in_stage(stage_name):
-    """All projects currently in this stage (e.g. Internal User Testing)."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM projects WHERE stage = ? ORDER BY client""",
-            (stage_name,),
         ).fetchall()
 
 
@@ -265,93 +247,6 @@ def record_checkin_reply(checkin_id, response):
                WHERE id=?""",
             (response, checkin_id)
         )
-
-
-# ── BRAIN DUMPS ───────────────────────────────────────────────────────────────
-
-def add_brain_dump(author_slack, content, author_name=None):
-    with get_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO brain_dumps (author_slack, author_name, content)
-               VALUES (?, ?, ?)""",
-            (author_slack, author_name, content)
-        )
-        return cur.lastrowid
-
-
-def brain_dumps_since(date_iso):
-    """Get all brain dumps on or after this date (YYYY-MM-DD)."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM brain_dumps
-               WHERE date(created_at) = date(?)
-               ORDER BY created_at DESC""",
-            (date_iso,)
-        ).fetchall()
-
-
-def latest_brain_dump_for_user(author_slack, days_back=1):
-    """Get the most recent brain dump by this user in the last N days."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM brain_dumps
-               WHERE author_slack = ?
-               AND julianday('now') - julianday(created_at) <= ?
-               ORDER BY created_at DESC LIMIT 1""",
-            (author_slack, days_back)
-        ).fetchone()
-
-
-def brain_dumps_yesterday():
-    """Get all brain dumps from yesterday (for morning brief)."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM brain_dumps
-               WHERE date(created_at) = date('now', '-1 day')
-               ORDER BY created_at DESC"""
-        ).fetchall()
-
-
-def brain_dumps_today():
-    """Get all brain dumps from today (so /brief shows same-day dumps too)."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM brain_dumps
-               WHERE date(created_at) = date('now')
-               ORDER BY created_at DESC"""
-        ).fetchall()
-
-
-def brain_dumps_between(start_iso, end_iso):
-    """Get all brain dumps between two dates (inclusive). Dates YYYY-MM-DD."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM brain_dumps
-               WHERE date(created_at) >= date(?) AND date(created_at) <= date(?)
-               ORDER BY created_at ASC""",
-            (start_iso, end_iso),
-        ).fetchall()
-
-
-def brain_dumps_last_week():
-    """Mon–Fri of the week that just ended (for Saturday week report). SQLite: weekday 0 = Sunday."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM brain_dumps
-               WHERE date(created_at) BETWEEN date('now', 'weekday 0', '-6 days')
-               AND date('now', 'weekday 0', '-2 days')
-               ORDER BY created_at ASC"""
-        ).fetchall()
-
-
-def brain_dumps_last_month():
-    """Previous calendar month (for month report on 1st)."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT * FROM brain_dumps
-               WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now', '-1 month')
-               ORDER BY created_at ASC"""
-        ).fetchall()
 
 
 # ── REPORTING ─────────────────────────────────────────────────────────────────

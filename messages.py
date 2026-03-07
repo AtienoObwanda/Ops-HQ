@@ -1,5 +1,5 @@
 """
-Ops Brain - Message Formatter
+CS Bot - Message Formatter
 All Slack Block Kit payloads live here. Keep bot.py clean.
 """
 from datetime import datetime
@@ -12,14 +12,13 @@ HEALTH_EMOJI = {
 }
 
 STAGE_EMOJI = {
-    "Coming Soon":           "📥",
-    "Requirement Gathering": "📋",
-    "Ticket Grooming":       "✂️",
-    "To Do":                 "📌",
-    "In Progress":           "🔄",
-    "Internal User Testing": "🧪",
-    "Customer Testing":      "👥",
-    "Done":                  "✅",
+    "Discovery":   "🔍",
+    "Config":      "⚙️",
+    "Integration": "🔗",
+    "UAT":         "🧪",
+    "Go-Live":     "🚀",
+    "Hypercare":   "🛡️",
+    "Done":        "✅",
 }
 
 
@@ -41,28 +40,14 @@ def _context(text):
 
 # ── MORNING BRIEF ─────────────────────────────────────────────────────────────
 
-def morning_brief(stale, at_risk, all_projects, brain_dumps=None, brain_dumps_today=None, jira_data=None):
+def morning_brief(stale, at_risk, all_projects, jira_data=None):
     today = datetime.now().strftime("%A, %d %b %Y")
     blocks = [
-        _header(f"☀️  Ops Brain Morning Brief — {today}"),
+        _header(f"☀️  CS Morning Brief — {today}"),
         _divider(),
         _section(f"*{len(all_projects)} active projects* · *{len(at_risk)} at risk* · *{len(stale)} stale*"),
         _divider(),
     ]
-
-    def _dump_block(label, dumps):
-        if not dumps:
-            return
-        for d in dumps:
-            raw = d["content"].replace("\n", " ").strip()
-            preview = (raw[:500] + "…") if len(raw) > 500 else raw
-            blocks.append(_section(f"🧠 *{label}*\n> {preview}"))
-        blocks.append(_divider())
-
-    # Today's brain dump(s) first (so same-day dump shows when you run /brief)
-    _dump_block("Today's brain dump", brain_dumps_today or [])
-    # Yesterday's brain dump(s)
-    _dump_block("Yesterday's brain dump", brain_dumps or [])
 
     # At risk section
     if at_risk:
@@ -125,125 +110,8 @@ def morning_brief(stale, at_risk, all_projects, brain_dumps=None, brain_dumps_to
             blocks.append(_section("*🔄 Jira Status Changes (last 24h)*\n" + "\n".join(change_lines)))
 
     blocks.append(_divider())
-    blocks.append(_context("Reply with `/brief` anytime for a fresh view · `/report` for COO summary"))
+    blocks.append(_context("Reply with `/brief` anytime · `/report` for COO summary · `/meetingprep` before meetings"))
 
-    return blocks
-
-
-# ── WEEK / MONTH REPORTS (from brain dumps) ───────────────────────────────────
-
-def _format_dump_date(created_at_str):
-    """Turn ISO datetime into e.g. Mon 3 Mar."""
-    if not created_at_str:
-        return ""
-    try:
-        dt = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-        return dt.strftime("%a %d %b")
-    except Exception:
-        return created_at_str[:10] if len(created_at_str) >= 10 else created_at_str
-
-
-def week_report(brain_dumps):
-    """End-of-week report from Mon–Fri brain dumps."""
-    if not brain_dumps:
-        return [
-            _header("📅 Week in Review"),
-            _divider(),
-            _section("No brain dumps this week (Mon–Fri). Use `/braindump <notes>` on weeknights to capture the day."),
-        ]
-    from datetime import datetime as dt, timedelta
-    today = dt.now()
-    # Last Friday (week report runs Saturday)
-    days_back = (today.weekday() + 3) % 7
-    if days_back == 0:
-        days_back = 7
-    last_friday = today - timedelta(days=days_back)
-    title = f"Week ending {last_friday.strftime('%a %d %b %Y')}"
-    blocks = [
-        _header(f"📅 Week in Review — {title}"),
-        _divider(),
-    ]
-    by_day = {}
-    for d in brain_dumps:
-        day = d["created_at"][:10] if d["created_at"] else ""
-        by_day.setdefault(day, []).append(d)
-    for day in sorted(by_day.keys()):
-        day_label = _format_dump_date(day + "T12:00:00") if day else "?"
-        blocks.append(_section(f"*{day_label}*"))
-        for d in by_day[day]:
-            content = (d["content"].replace("\n", " ").strip())[:800]
-            if len(d["content"].strip()) > 800:
-                content += "…"
-            blocks.append(_section(f"> {content}"))
-        blocks.append(_divider())
-    blocks.append(_context("From your evening brain dumps · `/weekreport` anytime"))
-    return blocks
-
-
-def month_report(brain_dumps):
-    """End-of-month report from the month's brain dumps."""
-    if not brain_dumps:
-        return [
-            _header("📆 Month in Review"),
-            _divider(),
-            _section("No brain dumps this month. Use `/braindump <notes>` to capture the day."),
-        ]
-    from datetime import datetime as dt
-    month_label = brain_dumps[0]["created_at"][:7] if brain_dumps else ""  # YYYY-MM
-    try:
-        yr, mo = int(month_label[:4]), int(month_label[5:7])
-        title = dt(yr, mo, 1).strftime("%B %Y")
-    except Exception:
-        title = month_label
-    blocks = [
-        _header(f"📆 Month in Review — {title}"),
-        _divider(),
-    ]
-    by_day = {}
-    for d in brain_dumps:
-        day = d["created_at"][:10] if d["created_at"] else ""
-        by_day.setdefault(day, []).append(d)
-    for day in sorted(by_day.keys()):
-        day_label = _format_dump_date(day + "T12:00:00") if day else "?"
-        blocks.append(_section(f"*{day_label}*"))
-        for d in by_day[day]:
-            content = (d["content"].replace("\n", " ").strip())[:800]
-            if len(d["content"].strip()) > 800:
-                content += "…"
-            blocks.append(_section(f"> {content}"))
-        blocks.append(_divider())
-    blocks.append(_context("From your evening brain dumps · `/monthreport` anytime"))
-    return blocks
-
-
-# ── RECON / QA — Internal User Testing status request ─────────────────────────
-
-def recon_iut_status_request(projects):
-    """Message to recon specialists/QAs listing projects in Internal User Testing and asking for updates."""
-    if not projects:
-        return [
-            _header("🧪 Internal User Testing — Status Request"),
-            _divider(),
-            _section("No projects are currently in *Internal User Testing*. Nothing to report."),
-        ]
-    lines = []
-    for p in projects:
-        owner = f"<@{p['owner_slack']}>" if p.get("owner_slack") else p.get("owner_name") or "—"
-        lines.append(f"• *{p['client']}* — {owner} — last: {_time_ago(p.get('updated_at'))}")
-    blocks = [
-        _header("🧪 Internal User Testing — Status Request"),
-        _section(
-            f"*{len(projects)} project(s)* in Internal User Testing. "
-            "Please share any updates (blockers, progress, sign-off)."
-        ),
-        _divider(),
-        _section("\n".join(lines)),
-        _section(
-            "Reply with: `/update \"Client Name\" your status here`\n"
-            "Or move stage: `/stage \"Client Name\" Customer Testing` when ready."
-        ),
-        _divider(),
-    ]
     return blocks
 
 
@@ -359,8 +227,7 @@ def coo_report(all_projects, at_risk, issues_by_cat):
         stages.setdefault(p["stage"], []).append(p["client"])
 
     stage_lines = []
-    pipeline_stages = ["Coming Soon", "Requirement Gathering", "Ticket Grooming", "To Do", "In Progress", "Internal User Testing", "Customer Testing"]
-    for stage in pipeline_stages:
+    for stage in ["Discovery", "Config", "Integration", "UAT", "Go-Live", "Hypercare"]:
         clients = stages.get(stage, [])
         if clients:
             stage_lines.append(f"{STAGE_EMOJI.get(stage, '📌')} *{stage}*: {', '.join(clients)}")
@@ -385,7 +252,7 @@ def coo_report(all_projects, at_risk, issues_by_cat):
         blocks.append(_section("*Recurring Issues*\n" + "\n".join(issue_lines)))
         blocks.append(_divider())
 
-    blocks.append(_context("Generated by Ops Brain · /report to regenerate"))
+    blocks.append(_context("Generated by CS Bot · /report to regenerate"))
     return blocks
 
 
@@ -393,7 +260,7 @@ def coo_report(all_projects, at_risk, issues_by_cat):
 
 def help_message():
     return [
-        _header("🤖 Ops Brain — Command Reference"),
+        _header("🤖 CS Bot — Command Reference"),
         _divider(),
         _section(
             "*Projects*\n"
@@ -407,15 +274,11 @@ def help_message():
             "`/stage \"Client\" <stage>` — move to new stage\n"
             "`/risk \"Client\" <reason>` — flag as at risk\n"
             "`/resolve \"Client\"` — mark back to On Track\n"
-            "`/askrecon` — DM recon/QAs with projects in Internal User Testing for status\n"
         ),
         _section(
             "*Reporting*\n"
             "`/brief` — your morning brief on demand\n"
             "`/report` — COO-ready summary\n"
-            "`/braindump <notes>` — save evening notes (Mon–Fri; in brief + week/month reports)\n"
-            "`/weekreport` — this week’s brain dumps (also sent Sat 9am)\n"
-            "`/monthreport` — last month’s brain dumps (also sent 1st 9am)\n"
             "`/issues` — open issue log\n"
         ),
         _section(
