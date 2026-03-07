@@ -39,6 +39,26 @@ def _jira_get(path, params=None):
     return resp.json()
 
 
+def _jira_search_jql(jql, fields=None, max_results=20, expand=None):
+    """
+    Use POST /rest/api/3/search/jql (old GET /search returns 410 Gone on Jira Cloud).
+    Request body: jql, maxResults, fields (array), optional expand.
+    """
+    if not all([JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN]):
+        raise EnvironmentError("Jira env vars not set.")
+    url = f"{JIRA_BASE_URL}/rest/api/3/search/jql"
+    body = {"jql": jql, "maxResults": max_results}
+    if fields:
+        body["fields"] = fields if isinstance(fields, list) else [f.strip() for f in (fields or "").split(",") if f.strip()]
+    if expand:
+        body["expand"] = expand
+    resp = requests.post(url, headers=_auth_header(), json=body, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    # New API may return "values" instead of "issues"; accept both
+    return data.get("issues", data.get("values", []))
+
+
 def is_configured():
     return all([JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEYS])
 
@@ -63,12 +83,8 @@ def get_stale_tickets(hours=None):
     )
 
     try:
-        data = _jira_get("/search", params={
-            "jql": jql,
-            "fields": "summary,status,assignee,updated,priority,comment",
-            "maxResults": 20,
-        })
-        return [_parse_ticket(t) for t in data.get("issues", [])]
+        issues = _jira_search_jql(jql, fields=["summary", "status", "assignee", "updated", "priority", "comment"], max_results=20)
+        return [_parse_ticket(t) for t in issues]
     except Exception as e:
         print(f"⚠️  Jira stale tickets error: {e}")
         return []
@@ -83,12 +99,8 @@ def get_blocked_tickets():
     jql = f"({project_jql}) AND status = Blocked ORDER BY updated ASC"
 
     try:
-        data = _jira_get("/search", params={
-            "jql": jql,
-            "fields": "summary,status,assignee,updated,priority",
-            "maxResults": 10,
-        })
-        return [_parse_ticket(t) for t in data.get("issues", [])]
+        issues = _jira_search_jql(jql, fields=["summary", "status", "assignee", "updated", "priority"], max_results=10)
+        return [_parse_ticket(t) for t in issues]
     except Exception as e:
         print(f"⚠️  Jira blocked tickets error: {e}")
         return []
@@ -101,12 +113,8 @@ def get_tickets_for_project(project_key):
 
     jql = f'project = "{project_key}" AND status NOT IN (Done, Closed, Resolved) ORDER BY priority DESC'
     try:
-        data = _jira_get("/search", params={
-            "jql": jql,
-            "fields": "summary,status,assignee,updated,priority",
-            "maxResults": 15,
-        })
-        return [_parse_ticket(t) for t in data.get("issues", [])]
+        issues = _jira_search_jql(jql, fields=["summary", "status", "assignee", "updated", "priority"], max_results=15)
+        return [_parse_ticket(t) for t in issues]
     except Exception as e:
         print(f"⚠️  Jira project tickets error: {e}")
         return []
@@ -124,14 +132,9 @@ def get_recent_status_changes(hours=24):
         f"ORDER BY updated DESC"
     )
     try:
-        data = _jira_get("/search", params={
-            "jql": jql,
-            "fields": "summary,status,assignee,updated,priority",
-            "maxResults": 15,
-            "expand": "changelog",
-        })
+        issues = _jira_search_jql(jql, fields=["summary", "status", "assignee", "updated", "priority"], max_results=15, expand="changelog")
         results = []
-        for issue in data.get("issues", []):
+        for issue in (issues if isinstance(issues, list) else []):
             ticket = _parse_ticket(issue)
             # Extract the status transition from changelog
             for history in reversed(issue.get("changelog", {}).get("histories", [])):

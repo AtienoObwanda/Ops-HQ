@@ -47,6 +47,7 @@
 #   /resolve    → Mark project back on track
 #   /askrecon   → Ask recon/QAs for status on Internal User Testing projects
 #   /brief      → Get your morning brief now
+#   /jira       → Test Jira connection (configured? stale/blocked/changes count)
 #   /report     → COO-ready summary
 #   /braindump  → Save evening brain dump (Mon–Fri; used in week/month reports)
 #   /weekreport → Week in review from brain dumps

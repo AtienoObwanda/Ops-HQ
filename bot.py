@@ -297,6 +297,33 @@ def handle_meetingprep(ack, respond, command, body):
         app.client.chat_postMessage(channel=body["channel_id"], text=f"❌ Error: {e}")
 
 
+# ── /jira (test connection) ────────────────────────────────────────────────────
+
+@app.command("/jira")
+def handle_jira(ack, respond):
+    ack()
+    if not jira:
+        respond("Jira client not loaded (check `jira_client.py` is present).")
+        return
+    if not jira.is_configured():
+        respond(
+            "Jira *not configured*. Set in .env:\n"
+            "`JIRA_BASE_URL` · `JIRA_EMAIL` · `JIRA_API_TOKEN` · `JIRA_PROJECT_KEYS`"
+        )
+        return
+    try:
+        data = jira.get_jira_brief_data()
+        n_stale = len(data.get("stale", []))
+        n_blocked = len(data.get("blocked", []))
+        n_changes = len(data.get("changes", []))
+        respond(
+            f"✅ *Jira connected*\n"
+            f"Brief data: {n_stale} stale · {n_blocked} blocked · {n_changes} recent status changes"
+        )
+    except Exception as e:
+        respond(f"❌ Jira error: `{e}`")
+
+
 # ── /brief ────────────────────────────────────────────────────────────────────
 
 @app.command("/brief")
