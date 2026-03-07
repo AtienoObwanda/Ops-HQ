@@ -6,7 +6,8 @@ Env vars needed:
     JIRA_BASE_URL       https://yourcompany.atlassian.net
     JIRA_EMAIL          your@email.com
     JIRA_API_TOKEN      your-api-token (https://id.atlassian.com/manage-profile/security/api-tokens)
-    JIRA_PROJECT_KEYS   CS,IMPL,OPS  (comma-separated, your implementation project keys)
+    JIRA_PROJECT_KEYS   CS,IMPL,OPS  (comma-separated)
+    JIRA_CREATED_SINCE  optional; YYYY-MM-DD, only issues created on or after this date (default 2026-01-01)
 """
 import os
 import base64
@@ -19,6 +20,15 @@ JIRA_API_TOKEN  = os.environ.get("JIRA_API_TOKEN", "")
 JIRA_PROJECT_KEYS = [k.strip() for k in os.environ.get("JIRA_PROJECT_KEYS", "").split(",") if k.strip()]
 
 STALE_HOURS = int(os.environ.get("JIRA_STALE_HOURS", "24"))
+# Only issues created on or after this date (YYYY-MM-DD). Set to "" to include all.
+JIRA_CREATED_SINCE = os.environ.get("JIRA_CREATED_SINCE", "2026-01-01").strip()
+
+
+def _created_since_jql():
+    """JQL fragment to restrict to issues created on or after JIRA_CREATED_SINCE."""
+    if not JIRA_CREATED_SINCE:
+        return ""
+    return f' AND created >= "{JIRA_CREATED_SINCE}"'
 
 
 def _auth_header():
@@ -79,6 +89,7 @@ def get_stale_tickets(hours=None):
         f"({project_jql}) "
         f"AND status NOT IN (Done, Closed, Resolved) "
         f"AND updated <= -{hours}h "
+        f"{_created_since_jql()} "
         f"ORDER BY updated ASC"
     )
 
@@ -96,7 +107,7 @@ def get_blocked_tickets():
         return []
 
     project_jql = " OR ".join(f'project = "{k}"' for k in JIRA_PROJECT_KEYS)
-    jql = f"({project_jql}) AND status = Blocked ORDER BY updated ASC"
+    jql = f"({project_jql}) AND status = Blocked{_created_since_jql()} ORDER BY updated ASC"
 
     try:
         issues = _jira_search_jql(jql, fields=["summary", "status", "assignee", "updated", "priority"], max_results=10)
@@ -111,7 +122,7 @@ def get_tickets_for_project(project_key):
     if not is_configured():
         return []
 
-    jql = f'project = "{project_key}" AND status NOT IN (Done, Closed, Resolved) ORDER BY priority DESC'
+    jql = f'project = "{project_key}" AND status NOT IN (Done, Closed, Resolved){_created_since_jql()} ORDER BY priority DESC'
     try:
         issues = _jira_search_jql(jql, fields=["summary", "status", "assignee", "updated", "priority"], max_results=15)
         return [_parse_ticket(t) for t in issues]
@@ -129,6 +140,7 @@ def get_recent_status_changes(hours=24):
     jql = (
         f"({project_jql}) "
         f"AND status CHANGED DURING (-{hours}h, now()) "
+        f"{_created_since_jql()} "
         f"ORDER BY updated DESC"
     )
     try:
