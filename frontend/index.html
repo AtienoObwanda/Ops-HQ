@@ -4,23 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CS Command Center</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg:       #080810;
-    --surface:  #0f0f1a;
-    --card:     #13131f;
-    --border:   #ffffff0d;
-    --border2:  #ffffff18;
-    --text:     #e8e8f0;
-    --muted:    #6b6b8a;
-    --accent:   #00e5a0;
-    --accent2:  #7c6aff;
-    --warn:     #ffb547;
-    --danger:   #ff4d6d;
-    --success:  #00e5a0;
-    --font:     'Syne', sans-serif;
-    --mono:     'JetBrains Mono', monospace;
+    /* Credrails blue theme */
+    --bg:       #0a0e18;
+    --surface:  #0f141c;
+    --card:     #141b26;
+    --border:   #ffffff0a;
+    --border2:  #ffffff14;
+    --text:     #e8ecf4;
+    --muted:    #6b7a8f;
+    --accent:   #0073e6;
+    --accent2:  #4d9fff;
+    --warn:     #e6a23c;
+    --danger:   #e64d6d;
+    --success:  #22c493;
+    --font:     'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono:     'IBM Plex Mono', 'SF Mono', monospace;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,7 +40,7 @@
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    background: radial-gradient(ellipse at 30% 50%, #0a0a1f 0%, var(--bg) 70%);
+    background: radial-gradient(ellipse at 30% 50%, #0d1525 0%, var(--bg) 70%);
   }
 
   .login-box {
@@ -99,7 +100,7 @@
   .btn-primary {
     width: 100%;
     background: var(--accent);
-    color: #080810;
+    color: #fff;
     border: none;
     border-radius: 8px;
     padding: 14px;
@@ -175,9 +176,9 @@
   .nav-item:hover { color: var(--text); background: #ffffff05; }
 
   .nav-item.active {
-    color: var(--accent);
+    color: var(--accent2);
     border-left-color: var(--accent);
-    background: #00e5a008;
+    background: rgba(0, 115, 230, 0.08);
   }
 
   .nav-icon { font-size: 16px; width: 20px; text-align: center; }
@@ -317,10 +318,10 @@
     letter-spacing: 0.5px;
   }
 
-  .tag-green  { background: #00e5a018; color: var(--accent); border: 1px solid #00e5a030; }
-  .tag-warn   { background: #ffb54718; color: var(--warn);   border: 1px solid #ffb54730; }
-  .tag-danger { background: #ff4d6d18; color: var(--danger); border: 1px solid #ff4d6d30; }
-  .tag-purple { background: #7c6aff18; color: var(--accent2);border: 1px solid #7c6aff30; }
+  .tag-green  { background: rgba(34, 196, 147, 0.15); color: var(--success); border: 1px solid rgba(34, 196, 147, 0.3); }
+  .tag-warn   { background: rgba(230, 162, 60, 0.15); color: var(--warn);   border: 1px solid rgba(230, 162, 60, 0.3); }
+  .tag-danger { background: rgba(230, 77, 109, 0.15); color: var(--danger); border: 1px solid rgba(230, 77, 109, 0.3); }
+  .tag-purple { background: rgba(77, 159, 255, 0.15); color: var(--accent2); border: 1px solid rgba(77, 159, 255, 0.3); }
   .tag-gray   { background: #ffffff0a; color: var(--muted);  border: 1px solid var(--border2); }
 
   /* ── PROJECT ROW ── */
@@ -547,7 +548,7 @@
 
   .btn-accent {
     background: var(--accent);
-    color: #080810;
+    color: #fff;
     border: none;
     border-radius: 8px;
     padding: 10px 20px;
@@ -654,7 +655,7 @@
     margin-right: 6px;
   }
 
-  .dot-green  { background: var(--accent); }
+  .dot-green  { background: var(--success); }
   .dot-warn   { background: var(--warn); }
   .dot-danger { background: var(--danger); }
 </style>
@@ -1021,7 +1022,7 @@ const STAGE_EMOJI = {
 };
 const HEALTH_COLORS = { "On Track":"green", "At Risk":"warn", "Blocked":"danger" };
 const CAT_COLORS = {
-  integration:"#7c6aff", reconciliation:"#f4a261", client:"#7b8cde",
+  integration:"#4d9fff", reconciliation:"#f4a261", client:"#7b8cde",
   system:"#2a9d8f", process:"#e9c46a", data:"#e76f51"
 };
 
