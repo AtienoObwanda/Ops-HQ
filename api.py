@@ -22,7 +22,9 @@ import database as db
 import ai_client as ai
 import jira_client as jira
 
-app = Flask(__name__, static_folder="frontend", static_url_path="")
+# frontend/ must sit next to api.py (repo root/frontend/index.html)
+_frontend = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
+app = Flask(__name__, static_folder=_frontend, static_url_path="")
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
 # Simple token-based auth. No OAuth complexity.
@@ -361,7 +363,7 @@ if __name__ == "__main__":
                 created_at  TEXT DEFAULT (datetime('now'))
             )
         """)
-    # Railway sets PORT; locally use DASHBOARD_PORT or 5001
-    port = int(os.environ.get("PORT", os.environ.get("DASHBOARD_PORT", 5001)))
+    # Railway sets PORT; do not set PORT in Railway — it injects the correct one
+    port = int(os.environ.get("PORT", 5001))
     print(f"🌐 CS Dashboard API running on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
