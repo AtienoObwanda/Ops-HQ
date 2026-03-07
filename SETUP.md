@@ -1,4 +1,4 @@
-# CS Bot — Setup Guide
+# Ops Brain — Setup Guide
 # Read this top to bottom. Takes ~20 minutes.
 
 # ═══════════════════════════════════════════════════════
@@ -7,7 +7,7 @@
 
 # 1. Go to https://api.slack.com/apps
 # 2. Click "Create New App" → "From scratch"
-# 3. Name it: "CS Bot" — pick your Credrails workspace
+# 3. Name it: "Ops Brain" — pick your workspace
 # 4. Click Create
 
 # ── OAuth & Permissions ───────────────────────────────
@@ -45,8 +45,12 @@
 #   /stage      → Move project to new stage
 #   /risk       → Flag a project at risk
 #   /resolve    → Mark project back on track
+#   /askrecon   → Ask recon/QAs for status on Internal User Testing projects
 #   /brief      → Get your morning brief now
 #   /report     → COO-ready summary
+#   /braindump  → Save evening brain dump (Mon–Fri; used in week/month reports)
+#   /weekreport → Week in review from brain dumps
+#   /monthreport → Month in review from brain dumps
 #   /issue      → Log a client issue
 #   /issues     → View open issues
 #   /help       → Show all commands
@@ -59,18 +63,24 @@
 # After adding all permissions:
 # Left sidebar → "Install App" → Reinstall to Workspace
 
+# If a slash command shows "dispatch_failed":
+# - Make sure that command is listed above and created under Slash Commands (exact name, e.g. askrecon).
+# - After adding a new command, reinstall the app to the workspace (Install App → Reinstall).
+# - Ensure the bot is running (e.g. python3 bot.py) and Socket Mode is enabled.
+
 
 # ═══════════════════════════════════════════════════════
-# STEP 2: CREATE YOUR PRIVATE CHANNEL
+# STEP 2: WHERE THE MORNING BRIEF GOES
 # ═══════════════════════════════════════════════════════
 
-# In Slack:
-# 1. Create a private channel: #cs-command
-# 2. Add the CS Bot to it (mention @CS Bot or use /invite)
-# 3. Right-click the channel → "Copy Link"
-#    URL looks like: https://app.slack.com/client/T.../C0123ABC
-#    The part starting with C... is your channel ID
-# 4. Paste into .env as CS_COMMAND_CHANNEL
+# Option A — To your DMs (easiest):
+# 1. In Slack, click your profile (top right) → "Profile" → three dots → "Copy member ID"
+# 2. Paste into .env as CS_BRIEF_SLACK_USER_ID=U0123ABC (your ID starts with U)
+
+# Option B — To a channel:
+# 1. Create a private channel (e.g. #ops-brain) and add Ops Brain to it
+# 2. Right-click the channel → "Copy Link" — the part after the last / (starts with C...) is the channel ID
+# 3. Paste into .env as CS_COMMAND_CHANNEL=C0123ABC
 
 
 # ═══════════════════════════════════════════════════════
@@ -80,20 +90,21 @@
 # Make sure you have Python 3.9+
 python3 --version
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (use pip3 if pip is not found)
+pip3 install -r requirements.txt
+# or: python3 -m pip install -r requirements.txt
 
 # Set up your environment
 cp .env.example .env
 # Now edit .env with your actual tokens
 
 # Load env and run
-export $(cat .env | grep -v '#' | xargs) && python bot.py
+export $(cat .env | grep -v '#' | xargs) && python3 bot.py
 
 # You should see:
 # ✅ DB initialised at cs_bot.db
 # ⏰ Scheduler started — briefs at 9am, check-ins at 4pm
-# 🤖 CS Bot starting...
+# 🤖 Ops Brain starting...
 # ⚡️ Bolt app is running!
 
 
@@ -132,7 +143,7 @@ export $(cat .env | grep -v '#' | xargs) && python bot.py
 # When adding a project, mention the engineer to assign them:
 /project add "Client X" "Integration Project" @engineer_name
 
-# The bot will:
+# Ops Brain will:
 # - Show their name in the brief
 # - DM them at 4pm for check-ins
 # - Their button clicks auto-update the project health
@@ -143,11 +154,11 @@ export $(cat .env | grep -v '#' | xargs) && python bot.py
 # ═══════════════════════════════════════════════════════
 
 # Option A: Run in background on your machine
-nohup python bot.py > bot.log 2>&1 &
+nohup python3 bot.py > bot.log 2>&1 &
 
 # Option B: Use screen
-screen -S csbot
-python bot.py
+screen -S opsbrain
+python3 bot.py
 # Ctrl+A then D to detach
 
 # Option C: Deploy to Railway.app (free tier, always-on)
@@ -159,11 +170,16 @@ python bot.py
 # WHAT HAPPENS AUTOMATICALLY
 # ═══════════════════════════════════════════════════════
 
-# 9:00 AM daily → Morning brief posted to #cs-command
+# 9:00 AM daily → Morning brief posted to your DMs (or your channel if you use one)
+#   - Yesterday’s brain dump (if you used /braindump)
 #   - Stale projects (no update in 24h)
 #   - At risk / blocked projects
 #   - Full pipeline snapshot
 
+# 6:00 PM Mon–Fri → You get a DM reminder to do an evening brain dump (/braindump <notes>)
+# Saturday 9:00 AM → Week in Review (Mon–Fri brain dumps) posted to your DMs
+# 1st of month 9:00 AM → Month in Review (previous month’s brain dumps) posted to your DMs
+# 10:00 AM Mon–Fri → Recon/QAs get a DM with projects in Internal User Testing; asked for status (set RECON_SLACK_IDS in .env)
 # 4:00 PM daily → Engineers get DMs
 #   - One message per engineer listing their projects
 #   - 3 buttons: On Track / At Risk / Blocked

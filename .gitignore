@@ -1,0 +1,10 @@
+# Secrets and local config — never commit
+.env
+.env.local
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
+.venv/
+venv/

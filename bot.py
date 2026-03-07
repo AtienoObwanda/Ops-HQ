@@ -1,15 +1,17 @@
 """
-CS Bot — Command Center for Atieno
+Ops Brain — Command Center for Atieno
 Slack Bolt + APScheduler
 
 Run:
     python bot.py
 
 Env vars required (put in .env):
-    SLACK_BOT_TOKEN     xoxb-...
+    SLACK_BOT_TOKEN       xoxb-...
     SLACK_SIGNING_SECRET  ...
-    CS_COMMAND_CHANNEL  #cs-command (channel ID, e.g. C0123ABC)
-    CS_BOT_DB           cs_bot.db (optional, default)
+    CS_COMMAND_CHANNEL    channel ID for brief (optional)
+    CS_BRIEF_SLACK_USER_ID  your Slack user ID — if set, brief is DMed to you instead of a channel
+    RECON_SLACK_IDS         comma-separated Slack user IDs for recon/QAs (get IUT status requests)
+    CS_BOT_DB               cs_bot.db (optional, default)
 """
 import os
 import re
@@ -29,17 +31,32 @@ app = App(
     signing_secret=os.environ["SLACK_SIGNING_SECRET"],
 )
 
-COMMAND_CHANNEL = os.environ.get("CS_COMMAND_CHANNEL", "")  # Your private #cs-command channel ID
+COMMAND_CHANNEL = os.environ.get("CS_COMMAND_CHANNEL", "")  # Channel ID for morning brief (optional)
+BRIEF_USER_ID = os.environ.get("CS_BRIEF_SLACK_USER_ID", "")  # If set, morning brief is sent to your DM instead
+RECON_SLACK_IDS = [x.strip() for x in os.environ.get("RECON_SLACK_IDS", "").split(",") if x.strip()]
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
-def _respond_blocks(respond, blocks, text="CS Bot"):
+def _respond_blocks(respond, blocks, text="Ops Brain"):
     respond(text=text, blocks=blocks)
 
 
-def _post_blocks(channel, blocks, text="CS Bot"):
+def _post_blocks(channel, blocks, text="Ops Brain"):
     app.client.chat_postMessage(channel=channel, text=text, blocks=blocks)
+
+
+def _dm_channel_for_user(user_id):
+    """Open or get DM channel with user; return channel ID for posting."""
+    r = app.client.conversations_open(users=[user_id])
+    return r["channel"]["id"]
+
+
+def _brief_destination():
+    """Return channel ID where morning brief should be sent (DM or channel)."""
+    if BRIEF_USER_ID:
+        return _dm_channel_for_user(BRIEF_USER_ID)
+    return COMMAND_CHANNEL or None
 
 
 def _parse_quoted(text):
@@ -96,7 +113,7 @@ def handle_project(ack, respond, command, body):
 
         pid = db.add_project(client=client, name=name, owner_slack=owner_slack, owner_name=owner_name)
         respond(text=f"Project added", blocks=[
-            msg._section(f"✅ *{client}* added to pipeline\nStage: Discovery · ID: `{pid}`\n\nNext: `/stage \"{client}\" Config` when ready"),
+            msg._section(f"✅ *{client}* added to pipeline\nStage: Coming Soon · ID: `{pid}`\n\nNext: `/stage \"{client}\" Requirement Gathering` when ready"),
         ])
         return
 
@@ -229,7 +246,9 @@ def handle_brief(ack, respond, command):
     stale = db.stale_projects(hours=24)
     at_risk = db.at_risk_projects()
     all_projects = db.all_projects()
-    respond(text="Morning Brief", blocks=msg.morning_brief(stale, at_risk, all_projects))
+    yesterday_dumps = db.brain_dumps_yesterday()
+    today_dumps = db.brain_dumps_today()
+    respond(text="Morning Brief", blocks=msg.morning_brief(stale, at_risk, all_projects, brain_dumps=yesterday_dumps, brain_dumps_today=today_dumps))
 
 
 # ── /report ───────────────────────────────────────────────────────────────────
@@ -240,7 +259,21 @@ def handle_report(ack, respond, command):
     all_projects = db.all_projects(exclude_done=False)
     at_risk = db.at_risk_projects()
     issues = db.issue_patterns()
-    respond(text="CS Report", blocks=msg.coo_report(all_projects, at_risk, issues))
+    respond(text="Ops Brain Report", blocks=msg.coo_report(all_projects, at_risk, issues))
+
+
+@app.command("/weekreport")
+def handle_weekreport(ack, respond, command):
+    ack()
+    dumps = db.brain_dumps_last_week()
+    respond(text="Week in Review", blocks=msg.week_report(dumps))
+
+
+@app.command("/monthreport")
+def handle_monthreport(ack, respond, command):
+    ack()
+    dumps = db.brain_dumps_last_month()
+    respond(text="Month in Review", blocks=msg.month_report(dumps))
 
 
 # ── /issue ────────────────────────────────────────────────────────────────────
@@ -302,12 +335,61 @@ def handle_issues(ack, respond, command):
     ])
 
 
+# ── /askrecon ─────────────────────────────────────────────────────────────────
+
+def _send_iut_status_to_recon():
+    """DM all recon specialists with the list of projects in Internal User Testing."""
+    iut = db.projects_in_stage("Internal User Testing")
+    blocks = msg.recon_iut_status_request(iut)
+    for slack_id in RECON_SLACK_IDS:
+        try:
+            channel = _dm_channel_for_user(slack_id)
+            _post_blocks(channel, blocks, text="Internal User Testing — status request")
+            print(f"✅ IUT status request sent to {slack_id}")
+        except Exception as e:
+            print(f"❌ Failed to DM recon {slack_id}: {e}")
+
+
+@app.command("/askrecon")
+def handle_askrecon(ack, respond, command, body):
+    ack()
+    try:
+        if not RECON_SLACK_IDS:
+            respond("No recon specialists configured. Set RECON_SLACK_IDS in .env (comma-separated Slack user IDs).")
+            return
+        _send_iut_status_to_recon()
+        iut = db.projects_in_stage("Internal User Testing")
+        respond(
+            text="Recon requested",
+            blocks=[msg._section(f"✅ Status request sent to {len(RECON_SLACK_IDS)} recon/QA(s) for *{len(iut)}* project(s) in Internal User Testing.")],
+        )
+    except Exception as e:
+        respond(f"`/askrecon` failed: {e}")
+        print(f"❌ /askrecon error: {e}")
+
+
 # ── /help ─────────────────────────────────────────────────────────────────────
+
+@app.command("/braindump")
+def handle_braindump(ack, respond, command, body):
+    ack()
+    text = (command.get("text") or "").strip()
+    if not text:
+        respond("Usage: `/braindump your notes here` — I’ll save it and show it back in your morning brief.")
+        return
+    user_id = body["user_id"]
+    user_name = body.get("user_name", "")
+    db.add_brain_dump(user_id, text, author_name=user_name)
+    respond(text="Brain dump saved", blocks=[
+        msg._section("🧠 *Brain dump saved*\nI’ll surface this in your morning brief."),
+        msg._context(f"At {datetime.now().strftime('%H:%M')}"),
+    ])
+
 
 @app.command("/help")
 def handle_help(ack, respond):
     ack()
-    respond(text="CS Bot Help", blocks=msg.help_message())
+    respond(text="Ops Brain Help", blocks=msg.help_message())
 
 
 # ── BUTTON ACTIONS (engineer check-in responses) ───────────────────────────────
@@ -342,16 +424,71 @@ def handle_checkin_button(ack, body, action, respond):
 # ── SCHEDULED JOBS ────────────────────────────────────────────────────────────
 
 def send_morning_brief():
-    """9am daily — post brief to #cs-command."""
-    if not COMMAND_CHANNEL:
-        print("⚠️  CS_COMMAND_CHANNEL not set — skipping morning brief")
+    """9am daily — post brief to your DM (if CS_BRIEF_SLACK_USER_ID set) or to channel."""
+    dest = _brief_destination()
+    if not dest:
+        print("⚠️  Set CS_BRIEF_SLACK_USER_ID (your Slack user ID) or CS_COMMAND_CHANNEL — skipping morning brief")
         return
     stale = db.stale_projects(hours=24)
     at_risk = db.at_risk_projects()
     all_projects = db.all_projects()
-    blocks = msg.morning_brief(stale, at_risk, all_projects)
-    _post_blocks(COMMAND_CHANNEL, blocks, text="☀️ CS Morning Brief")
-    print(f"✅ Morning brief posted to {COMMAND_CHANNEL}")
+    yesterday_dumps = db.brain_dumps_yesterday()
+    today_dumps = db.brain_dumps_today()
+    blocks = msg.morning_brief(stale, at_risk, all_projects, brain_dumps=yesterday_dumps, brain_dumps_today=today_dumps)
+    _post_blocks(dest, blocks, text="☀️ Ops Brain Morning Brief")
+    print(f"✅ Morning brief posted to {'your DM' if BRIEF_USER_ID else dest}")
+
+
+def send_evening_braindump_reminder():
+    """6pm Mon–Fri — DM user to prompt evening brain dump."""
+    if not BRIEF_USER_ID:
+        return
+    try:
+        channel = _dm_channel_for_user(BRIEF_USER_ID)
+        _post_blocks(
+            channel,
+            [msg._section("🌙 *Evening brain dump*\nHow did today go? Reply with:\n`/braindump <your notes>`\nI’ll save it and show it in your morning brief.")],
+            text="Evening brain dump",
+        )
+        print("✅ Evening brain-dump reminder sent")
+    except Exception as e:
+        print(f"❌ Evening reminder failed: {e}")
+
+
+def send_week_report():
+    """Saturday 9am — DM user with week report from Mon–Fri brain dumps."""
+    if not BRIEF_USER_ID:
+        return
+    try:
+        channel = _dm_channel_for_user(BRIEF_USER_ID)
+        dumps = db.brain_dumps_last_week()
+        blocks = msg.week_report(dumps)
+        _post_blocks(channel, blocks, text="Week in Review")
+        print("✅ Week report sent")
+    except Exception as e:
+        print(f"❌ Week report failed: {e}")
+
+
+def send_month_report():
+    """1st of month 9am — DM user with previous month's brain dumps."""
+    if not BRIEF_USER_ID:
+        return
+    try:
+        channel = _dm_channel_for_user(BRIEF_USER_ID)
+        dumps = db.brain_dumps_last_month()
+        blocks = msg.month_report(dumps)
+        _post_blocks(channel, blocks, text="Month in Review")
+        print("✅ Month report sent")
+    except Exception as e:
+        print(f"❌ Month report failed: {e}")
+
+
+def send_recon_iut_reminder():
+    """10am Mon–Fri — DM recon specialists with IUT projects and ask for status."""
+    if not RECON_SLACK_IDS:
+        return
+    _send_iut_status_to_recon()
+    print("✅ Recon IUT reminder sent")
 
 
 def send_engineer_checkins():
@@ -389,10 +526,14 @@ if __name__ == "__main__":
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_morning_brief, "cron", hour=9, minute=0)
     scheduler.add_job(send_engineer_checkins, "cron", hour=16, minute=0)
+    scheduler.add_job(send_evening_braindump_reminder, "cron", hour=18, minute=0, day_of_week="mon-fri")
+    scheduler.add_job(send_week_report, "cron", day_of_week="sat", hour=9, minute=0)
+    scheduler.add_job(send_month_report, "cron", day=1, hour=9, minute=0)
+    scheduler.add_job(send_recon_iut_reminder, "cron", hour=10, minute=0, day_of_week="mon-fri")
     scheduler.start()
-    print("⏰ Scheduler started — briefs at 9am, check-ins at 4pm")
+    print("⏰ Scheduler started — briefs 9am, check-ins 4pm, brain-dump Mon–Fri 6pm, recon IUT Mon–Fri 10am, week Sat 9am, month 1st 9am")
 
     # Start bot
-    print("🤖 CS Bot starting...")
+    print("🤖 Ops Brain starting...")
     handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
     handler.start()
