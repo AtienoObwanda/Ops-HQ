@@ -244,6 +244,39 @@ Generate my talking points for this meeting."""
     return _call(system, user, max_tokens=400)
 
 
+# ── PRODUCT SCOPE (escalation to product: draft scope from tickets, future, drive) ─
+
+def generate_product_scope(title, description, tickets_text, future_notes, drive_content):
+    """
+    Draft a product scope document for an escalation to product.
+    Inputs: escalation title/description; text from Jira tickets; future/backlog notes; Google Drive links + pasted content.
+    """
+    system = """You are a senior delivery/ops lead drafting a product scope for an escalation to the Product team.
+Your output is a clear, structured product scope document that Product can use to prioritise and spec work.
+Use the provided context from Jira tickets, future/backlog notes, and any Drive references. Be specific and actionable.
+Structure the scope as:
+1. Summary (2–3 sentences: what we're asking for and why)
+2. Background / context (from tickets and notes)
+3. Proposed scope (clear bullets or numbered items; what should be in scope)
+4. Out of scope (if relevant)
+5. Success criteria / acceptance (how we know it's done)
+6. References (ticket keys, Drive links if any)
+Keep it under 500 words. Write in plain English, no jargon. This is for internal Product consumption."""
+
+    user_parts = [f"Escalation title: {title}"]
+    if description:
+        user_parts.append(f"Escalation description:\n{description}")
+    user_parts.append("\n--- JIRA TICKETS ---")
+    user_parts.append(tickets_text or "No tickets linked.")
+    user_parts.append("\n--- FUTURE / BACKLOG NOTES ---")
+    user_parts.append(future_notes or "None provided.")
+    user_parts.append("\n--- GOOGLE DRIVE / ADDITIONAL CONTEXT ---")
+    user_parts.append(drive_content or "None provided.")
+    user_parts.append("\n\nDraft the product scope document now.")
+
+    return _call(system, "\n".join(user_parts), max_tokens=1200)
+
+
 # ── ON-DEMAND ASK (any info from cockpit) ─────────────────────────────────────
 
 def answer_cockpit_prompt(user_prompt, context_text):

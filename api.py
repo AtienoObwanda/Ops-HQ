@@ -600,6 +600,127 @@ def ai_ask():
         return jsonify({"error": str(e)}), 500
 
 
+# ── PRODUCT ESCALATIONS ───────────────────────────────────────────────────────
+
+@app.route("/api/escalations", methods=["GET"])
+@_require_auth()
+def get_escalations():
+    rows = db.list_product_escalations()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/escalations", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def create_escalation():
+    data = request.json or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    keys_raw = data.get("jira_keys")
+    if isinstance(keys_raw, list):
+        jira_keys = keys_raw
+    elif isinstance(keys_raw, str):
+        jira_keys = [k.strip() for k in keys_raw.replace(",", " ").split() if k.strip()]
+    else:
+        jira_keys = None
+    eid = db.add_product_escalation(
+        title=title,
+        description=data.get("description"),
+        jira_keys=jira_keys,
+        future_notes=data.get("future_notes"),
+        drive_links=data.get("drive_links"),
+        drive_notes=data.get("drive_notes"),
+    )
+    return jsonify({"id": eid}), 201
+
+
+@app.route("/api/escalations/<int:eid>", methods=["GET"])
+@_require_auth()
+def get_escalation(eid):
+    row = db.get_product_escalation(eid)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/escalations/<int:eid>", methods=["PATCH"])
+@_require_auth(roles=["admin", "engineer"])
+def update_escalation(eid):
+    data = request.json or {}
+    allowed = {"title", "description", "status", "future_notes", "drive_links", "drive_notes", "drafted_scope"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if data.get("jira_keys") is not None:
+        keys_raw = data["jira_keys"]
+        if isinstance(keys_raw, list):
+            updates["jira_keys"] = ",".join(k.strip() for k in keys_raw if k and str(k).strip())
+        else:
+            updates["jira_keys"] = (keys_raw or "").strip() or None
+    if updates:
+        db.update_product_escalation(eid, **updates)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/escalations/<int:eid>", methods=["DELETE"])
+@_require_auth(roles=["admin"])
+def delete_escalation(eid):
+    db.delete_product_escalation(eid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/ai/product-scope", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def ai_product_scope():
+    """
+    Draft a product scope from an escalation (by id) or from raw payload.
+    Body: escalation_id (int) OR title, description, jira_keys[], future_notes, drive_links, drive_notes.
+    Fetches Jira ticket details by keys and passes tickets + future + drive content to AI.
+    """
+    data = request.json or {}
+    escalation_id = data.get("escalation_id")
+
+    if escalation_id:
+        esc = db.get_product_escalation(int(escalation_id))
+        if not esc:
+            return jsonify({"error": "Escalation not found"}), 404
+        title = esc.get("title") or ""
+        description = esc.get("description") or ""
+        jira_keys_str = esc.get("jira_keys") or ""
+        jira_keys = [k.strip() for k in jira_keys_str.replace(",", " ").split() if k.strip()]
+        future_notes = esc.get("future_notes") or ""
+        drive_links = esc.get("drive_links") or ""
+        drive_notes = esc.get("drive_notes") or ""
+    else:
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "title or escalation_id required"}), 400
+        description = data.get("description") or ""
+        keys_raw = data.get("jira_keys") or []
+        jira_keys = keys_raw if isinstance(keys_raw, list) else [k.strip() for k in str(keys_raw).replace(",", " ").split() if k.strip()]
+        future_notes = data.get("future_notes") or ""
+        drive_links = data.get("drive_links") or ""
+        drive_notes = data.get("drive_notes") or ""
+
+    tickets = jira.get_tickets_by_keys(jira_keys) if jira_keys else []
+    tickets_text = "\n\n".join(
+        f"[{t.get('key')}] {t.get('summary')}\nStatus: {t.get('status')}\n{t.get('description', '')}"
+        for t in tickets
+    ) if tickets else "No tickets linked or Jira not configured."
+
+    drive_content = drive_links.strip()
+    if drive_notes.strip():
+        drive_content = (drive_content + "\n\nPasted context:\n" + drive_notes.strip()) if drive_content else drive_notes.strip()
+
+    try:
+        scope = ai.generate_product_scope(title, description, tickets_text, future_notes, drive_content)
+        out = {"draft": scope}
+        if escalation_id:
+            db.update_product_escalation(int(escalation_id), drafted_scope=scope)
+            out["escalation_id"] = int(escalation_id)
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/ai/digest", methods=["POST"])
 @_require_auth(roles=["admin"])
 def ai_digest():

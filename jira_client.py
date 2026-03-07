@@ -49,6 +49,37 @@ def _jira_get(path, params=None):
     return resp.json()
 
 
+def _jira_get_issue(issue_key, fields=None):
+    """GET single issue by key. Returns raw issue dict or None if not found."""
+    if not all([JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN]):
+        return None
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+    params = {}
+    if fields:
+        params["fields"] = ",".join(fields) if isinstance(fields, list) else fields
+    try:
+        resp = requests.get(url, headers=_auth_header(), params=params or None, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return None
+
+
+def _adf_to_plain(node):
+    """Recursively extract plain text from Jira ADF (Atlassian Document Format) description."""
+    if not node:
+        return ""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, dict):
+        text = node.get("text") or ""
+        content = node.get("content") or []
+        return text + "".join(_adf_to_plain(c) for c in content)
+    if isinstance(node, list):
+        return "".join(_adf_to_plain(c) for c in node)
+    return ""
+
+
 def _jira_search_jql(jql, fields=None, max_results=20, expand=None):
     """
     Use POST /rest/api/3/search/jql (old GET /search returns 410 Gone on Jira Cloud).
@@ -193,6 +224,40 @@ def _hours_since(iso_str):
         return int(diff.total_seconds() / 3600)
     except Exception:
         return 0
+
+
+# ── FETCH BY KEYS (for product scope drafting) ──────────────────────────────────
+
+def get_tickets_by_keys(keys):
+    """
+    Fetch full issue details (summary, description, status, etc.) for given Jira keys.
+    Returns list of dicts with key, summary, status, description_plain, url for use in AI scope drafting.
+    """
+    if not is_configured() or not keys:
+        return []
+    keys = [k.strip().upper() for k in keys if k and str(k).strip()]
+    if not keys:
+        return []
+    result = []
+    fields = ["summary", "description", "status", "assignee", "priority", "updated"]
+    for key in keys:
+        issue = _jira_get_issue(key, fields=fields)
+        if not issue:
+            continue
+        fields_obj = issue.get("fields", {})
+        desc = fields_obj.get("description")
+        description_plain = _adf_to_plain(desc).strip() if desc else ""
+        result.append({
+            "key":        issue.get("key", ""),
+            "summary":    fields_obj.get("summary", ""),
+            "status":     (fields_obj.get("status") or {}).get("name", ""),
+            "priority":   (fields_obj.get("priority") or {}).get("name", ""),
+            "assignee":   (fields_obj.get("assignee") or {}).get("displayName", "Unassigned"),
+            "updated":    fields_obj.get("updated", ""),
+            "description": description_plain,
+            "url":        f"{JIRA_BASE_URL}/browse/{issue.get('key', '')}",
+        })
+    return result
 
 
 # ── SUMMARY FOR BRIEF ─────────────────────────────────────────────────────────

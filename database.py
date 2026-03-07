@@ -113,6 +113,21 @@ def init_db():
             conn.execute("ALTER TABLE issues ADD COLUMN client_id INTEGER REFERENCES clients(id)")
         except sqlite3.OperationalError:
             pass
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS product_escalations (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                title         TEXT NOT NULL,
+                description   TEXT,
+                status        TEXT NOT NULL DEFAULT 'draft',
+                jira_keys     TEXT,
+                future_notes  TEXT,
+                drive_links   TEXT,
+                drive_notes   TEXT,
+                drafted_scope TEXT,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        """)
     print(f"✅ DB initialised at {DB_PATH}")
 
 # ── EISENHOWER (planning / prioritising) ───────────────────────────────────────
@@ -397,6 +412,55 @@ def record_checkin_reply(checkin_id, response):
                WHERE id=?""",
             (response, checkin_id)
         )
+
+
+# ── PRODUCT ESCALATIONS (escalation to product, draft scopes from tickets/future/drive) ─
+
+def add_product_escalation(title, description=None, jira_keys=None, future_notes=None, drive_links=None, drive_notes=None):
+    keys_str = ",".join([k.strip() for k in (jira_keys or []) if k and k.strip()]) if isinstance(jira_keys, list) else (jira_keys or "")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO product_escalations (title, description, jira_keys, future_notes, drive_links, drive_notes)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                (title or "").strip(),
+                (description or "").strip() or None,
+                keys_str or None,
+                (future_notes or "").strip() or None,
+                (drive_links or "").strip() or None,
+                (drive_notes or "").strip() or None,
+            ),
+        )
+        return cur.lastrowid
+
+
+def get_product_escalation(eid):
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM product_escalations WHERE id = ?", (eid,)).fetchone()
+
+
+def list_product_escalations():
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT * FROM product_escalations ORDER BY created_at DESC"""
+        ).fetchall()
+
+
+def update_product_escalation(eid, **kwargs):
+    allowed = {"title", "description", "status", "jira_keys", "future_notes", "drive_links", "drive_notes", "drafted_scope"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return
+    updates["updated_at"] = datetime.utcnow().isoformat()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [eid]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE product_escalations SET {set_clause} WHERE id = ?", values)
+
+
+def delete_product_escalation(eid):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM product_escalations WHERE id = ?", (eid,))
 
 
 # ── REPORTING ─────────────────────────────────────────────────────────────────

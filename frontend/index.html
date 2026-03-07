@@ -743,6 +743,9 @@
     <div class="nav-item" onclick="nav('eisenhower')" id="nav-eisenhower">
       <span class="nav-icon">⊞</span> Eisenhower
     </div>
+    <div class="nav-item" onclick="nav('escalations')" id="nav-escalations">
+      <span class="nav-icon">📤</span> Escalation to Product
+    </div>
     <div class="nav-item" onclick="nav('goals')" id="nav-goals">
       <span class="nav-icon">🎯</span> Team Goals
     </div>
@@ -933,6 +936,21 @@
           <div class="eisenhower-quadrant-sub">Eliminate / later</div>
           <div id="eisenhower-neither" class="eisenhower-tasks"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ESCALATION TO PRODUCT -->
+    <div class="page" id="page-escalations">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Escalation to Product</div>
+          <div class="page-sub">Track escalations and draft product scopes from Jira tickets, future/backlog notes, and Google Drive context</div>
+        </div>
+        <button class="btn-sm accent" onclick="openAddEscalation()">+ New escalation</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Product escalation items</div>
+        <div id="escalations-list"></div>
       </div>
     </div>
 
@@ -1235,6 +1253,53 @@
   </div>
 </div>
 
+<!-- ESCALATION MODAL (add/edit) -->
+<div class="modal-overlay" id="escalation-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title" id="escalation-modal-title">New escalation to Product</div>
+    <input type="hidden" id="escalation-id" value="" />
+    <div class="form-field">
+      <label class="form-label">Title</label>
+      <input class="form-input" id="escalation-title" placeholder="e.g. Recon export for Client X" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Description (optional)</label>
+      <textarea class="form-textarea" id="escalation-description" rows="2" placeholder="Brief context for Product"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Jira ticket keys</label>
+      <input class="form-input" id="escalation-jira-keys" placeholder="e.g. CS-123, IMPL-456 or space-separated" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Future / backlog notes</label>
+      <textarea class="form-textarea" id="escalation-future-notes" rows="2" placeholder="Backlog items, future work, or context from planning"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Google Drive links</label>
+      <textarea class="form-textarea" id="escalation-drive-links" rows="1" placeholder="Paste Drive doc/folder links (one per line)"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Drive / other pasted context</label>
+      <textarea class="form-textarea" id="escalation-drive-notes" rows="3" placeholder="Paste key excerpts from Drive docs or other references"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('escalation-modal')">Cancel</button>
+      <button class="btn-accent" onclick="submitEscalation()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCOPE DRAFT MODAL -->
+<div class="modal-overlay" id="scope-draft-modal">
+  <div class="modal" style="max-width:640px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column">
+    <div class="modal-title">Product scope draft</div>
+    <div class="ai-output" id="scope-draft-content" style="flex:1;overflow:auto;white-space:pre-wrap;margin:0 0 12px 0"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('scope-draft-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -1327,6 +1392,7 @@ function nav(page) {
     workload: loadWorkload,
     docket:   loadDocket,
     eisenhower: loadEisenhower,
+    escalations: loadEscalations,
     issues:   loadIssues,
     goals:    loadGoals,
     ai:       loadAITools,
@@ -1800,6 +1866,106 @@ async function deleteEisenhowerTask(id) {
   await api("DELETE", `/api/eisenhower/${id}`);
   showToast("Task deleted");
   loadEisenhower();
+}
+
+// ── ESCALATION TO PRODUCT ─────────────────────────────────────────────────────
+async function loadEscalations() {
+  const data = await api("GET", "/api/escalations");
+  if (!data) return;
+  const list = document.getElementById("escalations-list");
+  if (!list) return;
+  const items = Array.isArray(data) ? data : [];
+  list.innerHTML = items.length
+    ? items.map(e => {
+        const keys = (e.jira_keys || "").split(",").map(k => k.trim()).filter(Boolean);
+        const keysStr = keys.length ? keys.join(", ") : "—";
+        return `
+          <div class="escalation-row" style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+            <div style="flex:1;min-width:180px">
+              <div style="font-weight:600">${escapeHtml(e.title)}</div>
+              <div style="font-size:12px;color:var(--muted)">${keysStr} · ${(e.created_at || "").slice(0,10)} · ${e.status || "draft"}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" class="btn-sm accent" onclick="draftProductScope(${e.id})">Draft product scope</button>
+              <button type="button" class="btn-sm" onclick="openEditEscalation(${e.id})">Edit</button>
+              ${USER.role === "admin" ? `<button type="button" class="btn-sm" onclick="deleteEscalation(${e.id})">Delete</button>` : ""}
+            </div>
+          </div>`;
+      }).join("")
+    : `<div class="empty-state">No escalation items yet. Add one to draft product scopes from Jira tickets, future notes, and Drive context.</div>`;
+}
+
+function openAddEscalation() {
+  document.getElementById("escalation-modal-title").textContent = "New escalation to Product";
+  document.getElementById("escalation-id").value = "";
+  document.getElementById("escalation-title").value = "";
+  document.getElementById("escalation-description").value = "";
+  document.getElementById("escalation-jira-keys").value = "";
+  document.getElementById("escalation-future-notes").value = "";
+  document.getElementById("escalation-drive-links").value = "";
+  document.getElementById("escalation-drive-notes").value = "";
+  document.getElementById("escalation-modal").classList.add("open");
+}
+
+async function openEditEscalation(id) {
+  const e = await api("GET", `/api/escalations/${id}`);
+  if (!e) return;
+  document.getElementById("escalation-modal-title").textContent = "Edit escalation";
+  document.getElementById("escalation-id").value = id;
+  document.getElementById("escalation-title").value = e.title || "";
+  document.getElementById("escalation-description").value = e.description || "";
+  document.getElementById("escalation-jira-keys").value = (e.jira_keys || "").replace(/,/g, ", ");
+  document.getElementById("escalation-future-notes").value = e.future_notes || "";
+  document.getElementById("escalation-drive-links").value = e.drive_links || "";
+  document.getElementById("escalation-drive-notes").value = e.drive_notes || "";
+  document.getElementById("escalation-modal").classList.add("open");
+}
+
+async function submitEscalation() {
+  const id = document.getElementById("escalation-id").value;
+  const title = document.getElementById("escalation-title").value.trim();
+  if (!title) { showToast("Title required"); return; }
+  const jiraKeysStr = document.getElementById("escalation-jira-keys").value.trim();
+  const jiraKeys = jiraKeysStr ? jiraKeysStr.split(/[\s,]+/).map(k => k.trim()).filter(Boolean) : [];
+  const payload = {
+    title,
+    description: document.getElementById("escalation-description").value.trim() || undefined,
+    jira_keys: jiraKeys,
+    future_notes: document.getElementById("escalation-future-notes").value.trim() || undefined,
+    drive_links: document.getElementById("escalation-drive-links").value.trim() || undefined,
+    drive_notes: document.getElementById("escalation-drive-notes").value.trim() || undefined,
+  };
+  if (id) {
+    await api("PATCH", `/api/escalations/${id}`, payload);
+    showToast("Escalation updated");
+  } else {
+    await api("POST", "/api/escalations", payload);
+    showToast("Escalation added");
+  }
+  closeModal("escalation-modal");
+  loadEscalations();
+}
+
+async function draftProductScope(escalationId) {
+  const contentEl = document.getElementById("scope-draft-content");
+  contentEl.innerHTML = "<span class=\"ai-loading\">✦ Drafting product scope from tickets, future notes, and Drive context...</span>";
+  document.getElementById("scope-draft-modal").classList.add("open");
+  const data = await api("POST", "/api/ai/product-scope", { escalation_id: escalationId });
+  contentEl.innerHTML = data?.draft || data?.error || "Error generating scope.";
+}
+
+async function deleteEscalation(id) {
+  if (!confirm("Delete this escalation?")) return;
+  await api("DELETE", `/api/escalations/${id}`);
+  showToast("Escalation deleted");
+  loadEscalations();
+}
+
+function escapeHtml(s) {
+  if (!s) return "";
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
 }
 
 // ── WORKLOAD ──────────────────────────────────────────────────────────────────
