@@ -359,8 +359,10 @@ def issue_patterns():
 def open_issues(limit=10):
     with get_conn() as conn:
         return conn.execute(
-            """SELECT i.*, p.client FROM issues i
+            """SELECT i.*, COALESCE(c.name, p.client) as client
+               FROM issues i
                LEFT JOIN projects p ON i.project_id = p.id
+               LEFT JOIN clients c ON i.client_id = c.id
                WHERE i.status = 'open'
                ORDER BY i.created_at DESC LIMIT ?""",
             (limit,)
@@ -421,6 +423,27 @@ def reflections_this_week():
         ).fetchall()
 
 
+def reflections_since(days=30):
+    """Brain dumps (reflections) in the last N days — for monthly reports and on-request reports."""
+    with get_conn() as conn:
+        since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        return conn.execute(
+            """SELECT * FROM reflections WHERE date >= ? ORDER BY date DESC""",
+            (since,),
+        ).fetchall()
+
+
+def add_reflection(date=None, wins=None, blockers=None, lessons=None):
+    """Log a brain dump (EOD reflection). date = YYYY-MM-DD or today."""
+    when = date or datetime.utcnow().strftime("%Y-%m-%d")
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO reflections (date, wins, blockers, lessons) VALUES (?, ?, ?, ?)""",
+            (when, (wins or "").strip() or None, (blockers or "").strip() or None, (lessons or "").strip() or None),
+        )
+        return cur.lastrowid
+
+
 def monthly_summary(days=30):
     """
     For end-of-month view: shipped (Done projects), resolved issues, open issues logged, blockers from reflections.
@@ -451,10 +474,12 @@ def monthly_summary(days=30):
                WHERE date >= ? AND (blockers IS NOT NULL AND blockers != '') ORDER BY date DESC""",
             (since,),
         ).fetchall()
+    brain_dumps = reflections_since(days)
     return {
         "days": days,
         "shipped": [dict(p) for p in done_projects],
         "resolved_issues": [dict(r) for r in resolved],
         "issues_logged": [dict(o) for o in opened],
         "blockers_from_reflections": [dict(r) for r in reflections_with_blockers],
+        "brain_dumps": [dict(r) for r in brain_dumps],
     }

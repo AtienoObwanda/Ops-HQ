@@ -284,10 +284,33 @@ def get_brief():
 @app.route("/api/summary/monthly", methods=["GET"])
 @_require_auth()
 def get_monthly_summary():
-    """End-of-month: what was shipped, resolved, issues logged, blockers."""
+    """End-of-month: what was shipped, resolved, issues logged, blockers, brain_dumps."""
     days = int(request.args.get("days", 30))
     data = db.monthly_summary(days=days)
     return jsonify(data)
+
+
+@app.route("/api/reflections", methods=["GET"])
+@_require_auth()
+def get_reflections():
+    """Brain dumps (EOD reflections) for the last N days — used in monthly reports and on request."""
+    days = int(request.args.get("days", 30))
+    rows = db.reflections_since(days=days)
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/reflections", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def create_reflection():
+    """Log a brain dump (wins, blockers, lessons). Integrated into AI monthly reports."""
+    data = request.json or {}
+    rid = db.add_reflection(
+        date=(data.get("date") or "").strip() or None,
+        wins=(data.get("wins") or "").strip() or None,
+        blockers=(data.get("blockers") or "").strip() or None,
+        lessons=(data.get("lessons") or "").strip() or None,
+    )
+    return jsonify({"id": rid}), 201
 
 
 @app.route("/api/jira/grooming", methods=["GET"])
@@ -483,6 +506,96 @@ def ai_meeting_prep():
         issues   = db.open_issues()
         prep     = ai.generate_meeting_prep(meeting_type, [dict(p) for p in projects], [dict(i) for i in issues])
         return jsonify({"prep": prep})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ai/monthly-report", methods=["POST"])
+@_require_auth(roles=["admin"])
+def ai_monthly_report():
+    """Generate monthly report with brain dumps integrated into the AI prompt. On request or for end-of-month."""
+    data = request.json or {}
+    days = int(data.get("days", 30))
+    monthly_data = db.monthly_summary(days=days)
+    try:
+        report = ai.generate_monthly_report(monthly_data)
+        return jsonify({"report": report})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _cockpit_context():
+    """Build a text snapshot of cockpit data for on-demand AI prompts."""
+    projects = db.all_projects(exclude_done=False)
+    clients = db.all_clients()
+    open_issues = db.open_issues(limit=50)
+    reflections = db.reflections_since(days=14)
+    monthly = db.monthly_summary(days=30)
+    at_risk = db.at_risk_projects()
+    stale = db.stale_projects(hours=48)
+    lines = []
+    lines.append("PROJECTS (client, name, stage, health, owner):")
+    for p in projects[:60]:
+        lines.append(f"  - {p.get('client', '')} | {p.get('name', '')} | {p.get('stage', '')} | {p.get('health', '')} | {p.get('owner_name', '—')}")
+    if not projects:
+        lines.append("  (none)")
+    lines.append("")
+    lines.append("CLIENTS:")
+    for c in clients:
+        lines.append(f"  - {c.get('name', '')} (id {c.get('id')})")
+    if not clients:
+        lines.append("  (none)")
+    lines.append("")
+    lines.append("OPEN ISSUES (title, category, client/project):")
+    for i in open_issues:
+        lines.append(f"  - [{i.get('category', '')}] {i.get('title', '')} | {i.get('client', '—')}")
+    if not open_issues:
+        lines.append("  (none)")
+    lines.append("")
+    lines.append("BRAIN DUMPS / REFLECTIONS (last 14 days):")
+    for r in reflections:
+        lines.append(f"  - {r.get('date', '')}: wins={r.get('wins') or '—'} | blockers={r.get('blockers') or '—'} | lessons={r.get('lessons') or '—'}")
+    if not reflections:
+        lines.append("  (none)")
+    lines.append("")
+    lines.append("AT-RISK PROJECTS:")
+    for p in at_risk:
+        lines.append(f"  - {p.get('client', '')} | {p.get('health', '')} | {p.get('notes', '—')}")
+    if not at_risk:
+        lines.append("  (none)")
+    lines.append("")
+    lines.append("STALE (no update 48h+):")
+    for p in stale[:15]:
+        lines.append(f"  - {p.get('client', '')} | {p.get('stage', '')}")
+    if not stale:
+        lines.append("  (none)")
+    lines.append("")
+    lines.append("LAST 30 DAYS: shipped (Done) " + str(len(monthly.get("shipped", []))) + ", issues resolved " + str(len(monthly.get("resolved_issues", []))) + ", issues logged " + str(len(monthly.get("issues_logged", []))) + ", brain dumps " + str(len(monthly.get("brain_dumps", []))))
+    if jira.is_configured():
+        try:
+            grooming = jira.get_grooming_tickets(max_results=20)
+            lines.append("")
+            lines.append("JIRA (recent open tickets):")
+            for t in grooming[:20]:
+                lines.append(f"  - {t.get('key', '')} | {t.get('status', '')} | {t.get('assignee', '—')} | {t.get('summary', '')[:60]}")
+        except Exception:
+            lines.append("")
+            lines.append("JIRA: (error fetching)")
+    return "\n".join(lines)
+
+
+@app.route("/api/ai/ask", methods=["POST"])
+@_require_auth()
+def ai_ask():
+    """On-demand prompt: ask anything about the cockpit. AI uses current projects, clients, issues, brain dumps, Jira, etc."""
+    data = request.json or {}
+    prompt = (data.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"error": "prompt required"}), 400
+    try:
+        context = _cockpit_context()
+        answer = ai.answer_cockpit_prompt(prompt, context)
+        return jsonify({"answer": answer})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

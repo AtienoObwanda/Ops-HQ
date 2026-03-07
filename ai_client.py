@@ -152,6 +152,58 @@ Give me the pattern analysis and process fixes."""
     return _call(system, user, max_tokens=600)
 
 
+# ── MONTHLY REPORT (brain dumps integrated) ────────────────────────────────────
+
+def generate_monthly_report(monthly_data):
+    """
+    Generate a narrative monthly report. Brain dumps (reflections) are integrated into the AI prompt
+    so the report reflects wins, blockers, and lessons from EOD reflections.
+    Use for end-of-month summaries or on request.
+    """
+    system = """You are a delivery operations lead writing an internal monthly summary for CS/implementation.
+Use the data below (shipped work, issues, and brain dumps / EOD reflections) to write a concise narrative report.
+Structure: 1) Summary in 2–3 sentences. 2) What shipped. 3) Issues and blockers (from brain dumps and issue log). 4) Wins and lessons (from brain dumps). 5) One paragraph of recommendations or focus for next period.
+Be specific — reference client names, ticket counts, and reflection themes. Keep under 400 words."""
+
+    days = monthly_data.get("days", 30)
+    shipped = monthly_data.get("shipped", [])
+    resolved = monthly_data.get("resolved_issues", [])
+    opened = monthly_data.get("issues_logged", [])
+    blockers_ref = monthly_data.get("blockers_from_reflections", [])
+    brain_dumps = monthly_data.get("brain_dumps", [])
+
+    shipped_text = "\n".join([f"- {p.get('client', '')} ({p.get('name', '')}) — {p.get('updated_at', '')[:10]}" for p in shipped]) or "None."
+    resolved_text = "\n".join([f"- {r.get('title', '')} [{r.get('category', '')}]" for r in resolved[:15]]) or "None."
+    opened_text = "\n".join([f"- {o.get('title', '')} [{o.get('category', '')}]" for o in opened[:15]]) or "None."
+    blockers_text = "\n".join([f"- {r.get('date', '')}: {r.get('blockers', '')}" for r in blockers_ref]) or "None."
+
+    brain_text = "\n".join([
+        f"- {r.get('date', '')}: Wins: {r.get('wins') or '—'} | Blockers: {r.get('blockers') or '—'} | Lessons: {r.get('lessons') or '—'}"
+        for r in brain_dumps
+    ]) or "No brain dumps in this period."
+
+    user = f"""Last {days} days — generate the monthly report.
+
+SHIPPED (moved to Done):
+{shipped_text}
+
+RESOLVED ISSUES:
+{resolved_text}
+
+ISSUES LOGGED (opened):
+{opened_text}
+
+BLOCKERS FROM REFLECTIONS:
+{blockers_text}
+
+BRAIN DUMPS (EOD reflections — integrate these into the narrative):
+{brain_text}
+
+Write the monthly report now."""
+
+    return _call(system, user, max_tokens=800)
+
+
 # ── MEETING PREP ──────────────────────────────────────────────────────────────
 
 def generate_meeting_prep(meeting_type, projects, issues):
@@ -190,3 +242,28 @@ Open issues:
 Generate my talking points for this meeting."""
 
     return _call(system, user, max_tokens=400)
+
+
+# ── ON-DEMAND ASK (any info from cockpit) ─────────────────────────────────────
+
+def answer_cockpit_prompt(user_prompt, context_text):
+    """
+    Answer a free-form question using the provided cockpit data (projects, clients, issues, etc.).
+    Context is built by the API from the database; user_prompt is what the user asked.
+    """
+    system = """You are an assistant for a delivery operations / CS cockpit (Ops HQ). You have been given a snapshot of current data: projects, clients, issues, brain dumps, Jira summary, etc.
+Answer the user's question using only the data provided. Be concise and specific. If the data doesn't contain enough to answer, say so and suggest what would help.
+Do not make up numbers or names. Quote or summarize from the context. Format lists clearly when useful."""
+
+    user = f"""COCKPIT DATA (current snapshot):
+
+{context_text}
+
+---
+
+USER QUESTION:
+{user_prompt}
+
+Answer based on the data above."""
+
+    return _call(system, user, max_tokens=1000)

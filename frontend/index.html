@@ -874,10 +874,31 @@
           <div class="card-title">🟢 Live account monitoring</div>
           <p style="font-size:13px;color:var(--muted);">Coming soon — catch issues on time for live accounts.</p>
         </div>
+        <div class="card">
+          <div class="card-title">🧠 Brain dump</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Log wins, blockers, lessons. Integrated into AI monthly reports and on-request reports.</p>
+          <div class="form-field" style="margin-bottom:8px">
+            <label class="form-label">Date (optional)</label>
+            <input class="form-input" type="date" id="bd-date" />
+          </div>
+          <div class="form-field" style="margin-bottom:8px">
+            <input class="form-input" id="bd-wins" placeholder="Wins" />
+          </div>
+          <div class="form-field" style="margin-bottom:8px">
+            <input class="form-input" id="bd-blockers" placeholder="Blockers" />
+          </div>
+          <div class="form-field" style="margin-bottom:10px">
+            <input class="form-input" id="bd-lessons" placeholder="Lessons" />
+          </div>
+          <button class="btn-sm accent" onclick="submitBrainDump()">Save brain dump</button>
+          <div id="brain-dumps-recent" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+        </div>
         <div class="card" style="grid-column:1/-1">
           <div class="card-title">📊 Monthly summary (last 30 days)</div>
-          <div class="page-sub" style="margin-bottom:12px">What was shipped, resolved, issues logged, blockers</div>
+          <div class="page-sub" style="margin-bottom:12px">What was shipped, resolved, issues logged, blockers. Brain dumps are included in the AI report.</div>
           <div id="monthly-summary"></div>
+          <button class="btn-sm accent" style="margin-top:12px" onclick="generateMonthlyReport()">Generate monthly report (AI)</button>
+          <div class="ai-output" id="monthly-report-output" style="display:none;margin-top:12px;white-space:pre-wrap"></div>
         </div>
       </div>
     </div>
@@ -953,6 +974,15 @@
       <div class="page-header">
         <div class="page-title">AI Tools</div>
       </div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-title">💬 Ask AI (on demand)</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Ask anything about your cockpit — projects, clients, issues, brain dumps, Jira. AI uses the current snapshot of data to answer.</p>
+        <textarea class="form-textarea" id="ask-ai-prompt" rows="2" placeholder="e.g. Which clients have open issues? Summarize at-risk projects. What did we ship last month?"></textarea>
+        <button class="btn-accent" style="margin-top:10px" onclick="askCockpitAI()">Ask</button>
+        <div class="ai-output" id="ask-ai-output" style="display:none;margin-top:14px;white-space:pre-wrap"></div>
+      </div>
+
       <div class="grid-2">
 
         <div class="card">
@@ -984,10 +1014,29 @@
           <div class="ai-output" id="digest-output" style="display:none;"></div>
         </div>
 
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-title">📋 Monthly report (brain dumps integrated)</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Narrative monthly report: shipped, issues, blockers, and <strong>brain dumps</strong> (wins, lessons) in one AI-generated summary. Use for end-of-month or on request.</p>
+          <button class="btn-accent" onclick="generateMonthlyReportFromAI()">Generate monthly report</button>
+          <div class="ai-output" id="monthly-report-ai-output" style="display:none;white-space:pre-wrap"></div>
+        </div>
+
       </div>
     </div>
 
   </main>
+</div>
+
+<!-- CLIENT DETAIL MODAL (report + issues) -->
+<div class="modal-overlay" id="client-detail-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title" id="cd-name">Client</div>
+    <div id="cd-content"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('client-detail-modal')">Close</button>
+      <button class="btn-accent" id="cd-draft-btn" onclick="cdGenerateDraft()">Generate client update draft</button>
+    </div>
+  </div>
 </div>
 
 <!-- ADD CLIENT MODAL -->
@@ -1410,38 +1459,45 @@ async function submitClient() {
   loadAITools();
 }
 
+let _currentClientId = null;
 async function openClientDetail(cid) {
   const data = await api("GET", `/api/clients/${cid}`);
   if (!data) return;
+  _currentClientId = cid;
   const c = data.client;
   const projects = data.projects || [];
   const issues = data.issues || [];
   const openIssues = issues.filter(i => i.status === "open");
-  const reportUrl = `#report-${cid}`;
-  const msg = `Client: ${c.name}\nProjects: ${projects.length}\nOpen issues: ${openIssues.length}\n\nReport: /api/clients/${cid}/report`;
-  showToast(`${c.name}: ${projects.length} projects, ${openIssues.length} open issues`);
-  document.getElementById("clients-list").innerHTML += `
-    <div class="card" id="client-detail-${cid}" style="margin-top:12px;display:block">
-      <div class="card-title">${c.name}</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Projects: ${projects.length} · Open issues: ${openIssues.length}</div>
-      <div style="margin-bottom:8px">${projects.map(p => `<span class="tag tag-gray" style="margin-right:6px">${p.name || p.client}</span>`).join("")}</div>
-      <div style="font-size:12px">${openIssues.slice(0, 5).map(i => `<div style="padding:4px 0">${i.title} <span class="tag" style="font-size:10px">${i.category}</span></div>`).join("") || "No open issues"}</div>
-      <button type="button" class="btn-sm accent" style="margin-top:10px" onclick="generateClientUpdateForClient(${cid})">Generate client update draft</button>
-    </div>`;
-  setTimeout(() => document.getElementById(`client-detail-${cid}`)?.scrollIntoView({ behavior: "smooth" }), 100);
+  document.getElementById("cd-name").textContent = c.name;
+  document.getElementById("cd-content").innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Projects: ${projects.length} · Open issues: ${openIssues.length}</div>
+    <div style="margin-bottom:12px"><strong>Projects</strong><div style="margin-top:6px">${projects.length ? projects.map(p => `<span class="tag tag-gray" style="margin-right:6px;margin-bottom:6px">${p.name || p.client} · ${p.stage}</span>`).join("") : "—"}</div></div>
+    <div><strong>Open issues</strong><div style="margin-top:6px;max-height:180px;overflow-y:auto">${openIssues.length ? openIssues.map(i => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">${i.title} <span class="tag" style="font-size:10px">${i.category}</span></div>`).join("") : "No open issues"}</div></div>
+  `;
+  document.getElementById("client-detail-modal").classList.add("open");
 }
-
-async function generateClientUpdateForClient(cid) {
+async function cdGenerateDraft() {
+  if (!_currentClientId) return;
   const out = document.getElementById("cu-output");
   if (out) {
     out.style.display = "block";
     out.innerHTML = `<span class="ai-loading">✦ Drafting...</span>`;
-    const data = await api("POST", `/api/ai/clientupdate/client/${cid}`);
+    const data = await api("POST", `/api/ai/clientupdate/client/${_currentClientId}`);
     out.innerHTML = data?.draft || data?.error || "Error.";
-  } else {
-    const data = await api("POST", `/api/ai/clientupdate/client/${cid}`);
-    showToast(data?.draft ? "Draft ready — open AI Tools to see it" : (data?.error || "Error"));
   }
+  closeModal("client-detail-modal");
+  nav("ai");
+}
+
+async function generateClientUpdateForClient(cid) {
+  const out = document.getElementById("cu-output");
+  const sel = document.getElementById("cu-client-select");
+  out.style.display = "block";
+  out.innerHTML = `<span class="ai-loading">✦ Drafting...</span>`;
+  const data = await api("POST", `/api/ai/clientupdate/client/${cid}`);
+  out.innerHTML = data?.draft || data?.error || "Error.";
+  if (sel) sel.value = cid;
+  nav("ai");
 }
 
 // ── PIPELINE ──────────────────────────────────────────────────────────────────
@@ -1578,23 +1634,66 @@ async function submitRequestUpdate() {
 }
 
 async function loadDocket() {
-  const data = await api("GET", "/api/summary/monthly?days=30");
+  const [data, reflections] = await Promise.all([
+    api("GET", "/api/summary/monthly?days=30"),
+    api("GET", "/api/reflections?days=7"),
+  ]);
   if (!data) return;
   const el = document.getElementById("monthly-summary");
   const s = data.shipped || [];
   const res = data.resolved_issues || [];
   const opened = data.issues_logged || [];
   const blockers = data.blockers_from_reflections || [];
+  const brainDumps = data.brain_dumps || [];
   el.innerHTML = `
     <div class="grid-2" style="gap:16px;margin-top:8px">
       <div><strong>Shipped (Done)</strong> ${s.length}</div>
       <div><strong>Issues resolved</strong> ${res.length}</div>
       <div><strong>Issues logged</strong> ${opened.length}</div>
       <div><strong>Blockers (reflections)</strong> ${blockers.length}</div>
+      <div><strong>Brain dumps (30d)</strong> ${brainDumps.length}</div>
     </div>
     ${s.length ? `<div style="margin-top:12px"><strong>Projects moved to Done:</strong> ${s.map(p => p.client).join(", ") || "—"}</div>` : ""}
     ${blockers.length ? `<div style="margin-top:8px;font-size:12px;color:var(--muted)">Blockers from reflections: ${blockers.map(r => r.date + ": " + (r.blockers || "").slice(0,80)).join("; ")}</div>` : ""}
   `;
+  const bdEl = document.getElementById("brain-dumps-recent");
+  if (bdEl) {
+    const list = Array.isArray(reflections) ? reflections : [];
+    bdEl.innerHTML = list.length
+      ? "Recent: " + list.slice(0, 5).map(r => `${r.date}: ${(r.wins || r.blockers || r.lessons || "").slice(0, 40)}…`).join(" · ")
+      : "No brain dumps in last 7 days.";
+  }
+}
+
+async function submitBrainDump() {
+  const wins = document.getElementById("bd-wins").value.trim();
+  const blockers = document.getElementById("bd-blockers").value.trim();
+  const lessons = document.getElementById("bd-lessons").value.trim();
+  const date = document.getElementById("bd-date").value.trim() || null;
+  if (!wins && !blockers && !lessons) return;
+  await api("POST", "/api/reflections", { date, wins: wins || null, blockers: blockers || null, lessons: lessons || null });
+  document.getElementById("bd-wins").value = "";
+  document.getElementById("bd-blockers").value = "";
+  document.getElementById("bd-lessons").value = "";
+  document.getElementById("bd-date").value = "";
+  showToast("Brain dump saved");
+  loadDocket();
+}
+
+async function generateMonthlyReport() {
+  const out = document.getElementById("monthly-report-output");
+  out.style.display = "block";
+  out.innerHTML = "<span class=\"ai-loading\">✦ Generating monthly report (brain dumps integrated)...</span>";
+  const data = await api("POST", "/api/ai/monthly-report", { days: 30 });
+  out.innerHTML = data?.report || data?.error || "Error generating report.";
+}
+
+async function generateMonthlyReportFromAI() {
+  const out = document.getElementById("monthly-report-ai-output");
+  out.style.display = "block";
+  out.innerHTML = "<span class=\"ai-loading\">✦ Generating monthly report (brain dumps integrated)...</span>";
+  const data = await api("POST", "/api/ai/monthly-report", { days: 30 });
+  out.innerHTML = data?.report || data?.error || "Error generating report.";
 }
 
 // ── EISENHOWER ─────────────────────────────────────────────────────────────────
@@ -1727,8 +1826,12 @@ async function loadWorkload() {
 
 // ── ISSUES ────────────────────────────────────────────────────────────────────
 async function loadIssues() {
-  const data = await api("GET", "/api/issues");
+  const [data, clients] = await Promise.all([api("GET", "/api/issues"), api("GET", "/api/clients")]);
   if (!data) return;
+  const imSel = document.getElementById("im-client-select");
+  if (imSel && clients) {
+    imSel.innerHTML = `<option value="">—</option>` + clients.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+  }
 
   const maxCount = Math.max(...data.patterns.map(p => p.count), 1);
   document.getElementById("issue-patterns").innerHTML = data.patterns.length
@@ -1802,6 +1905,16 @@ async function loadAITools() {
   }
 }
 
+async function askCockpitAI() {
+  const prompt = document.getElementById("ask-ai-prompt").value.trim();
+  if (!prompt) { showToast("Type a question"); return; }
+  const out = document.getElementById("ask-ai-output");
+  out.style.display = "block";
+  out.innerHTML = "<span class=\"ai-loading\">✦ Asking...</span>";
+  const data = await api("POST", "/api/ai/ask", { prompt });
+  out.innerHTML = data?.answer || data?.error || "Error.";
+}
+
 async function generateClientUpdate() {
   const cid = document.getElementById("cu-client-select").value;
   if (!cid) { showToast("Select a client first"); return; }
@@ -1830,7 +1943,14 @@ async function generateDigest() {
 }
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
-function openAddProject() {
+async function openAddProject() {
+  const clientSel = document.getElementById("pm-client-select");
+  if (clientSel && clientSel.options.length <= 1) {
+    const clients = await api("GET", "/api/clients");
+    if (clients && clients.length)
+      clientSel.innerHTML = `<option value="">— Or type below —</option>` +
+        clients.map(c => `<option value="${c.id}" data-name="${(c.name || "").replace(/"/g, "&quot;")}">${c.name}</option>`).join("");
+  }
   document.getElementById("project-modal").classList.add("open");
 }
 
@@ -1847,15 +1967,19 @@ function closeModal(id) {
 }
 
 async function submitProject() {
-  const client = document.getElementById("pm-client").value.trim();
+  const clientSel = document.getElementById("pm-client-select");
+  const clientInput = document.getElementById("pm-client").value.trim();
+  const clientId = clientSel?.value;
+  const client = clientId ? (clientSel.selectedOptions[0]?.getAttribute("data-name") || clientSel.selectedOptions[0]?.text) : clientInput;
   if (!client) return;
   await api("POST", "/api/projects", {
-    client,
-    name:       document.getElementById("pm-name").value || client,
+    client_id: clientId || null,
+    client:    client,
+    name:      document.getElementById("pm-name").value || client,
     owner_name: document.getElementById("pm-owner").value,
     recon_name: document.getElementById("pm-recon").value || null,
-    stage:      document.getElementById("pm-stage").value,
-    go_live:    document.getElementById("pm-golive").value || null,
+    stage:     document.getElementById("pm-stage").value,
+    go_live:   document.getElementById("pm-golive").value || null,
   });
   closeModal("project-modal");
   showToast(`${client} added`);
@@ -1865,10 +1989,12 @@ async function submitProject() {
 async function submitIssue() {
   const title = document.getElementById("im-title").value.trim();
   if (!title) return;
+  const clientId = document.getElementById("im-client-select")?.value || null;
   await api("POST", "/api/issues", {
     title,
     category:    document.getElementById("im-category").value,
     description: document.getElementById("im-desc").value,
+    client_id:   clientId || null,
   });
   closeModal("issue-modal");
   showToast("Issue logged");
