@@ -18,6 +18,7 @@ def _call(system_prompt, user_content, max_tokens=800):
     if not ANTHROPIC_API_KEY:
         raise EnvironmentError("ANTHROPIC_API_KEY not set.")
 
+    # Prompt Caching: cache repeated system prompt for ~5 min; cache reads ~90% cheaper (Anthropic)
     resp = requests.post(
         API_URL,
         headers={
@@ -30,6 +31,7 @@ def _call(system_prompt, user_content, max_tokens=800):
             "max_tokens": max_tokens,
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_content}],
+            "cache_control": {"type": "ephemeral"},
         },
         timeout=30,
     )
