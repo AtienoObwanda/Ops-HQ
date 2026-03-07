@@ -30,7 +30,9 @@ git push origin main
      Or leave start command empty if you’re using the **Procfile** (Railway will run `worker: python3 bot.py`).
 4. **Root Directory:** leave blank if the bot code is at the repo root.
 
-## 4. Set environment variables
+## 4. Set environment variables (required)
+
+If you skip this, the app will crash with `KeyError: 'SLACK_BOT_TOKEN'` or "Missing required env vars".
 
 In the same service: **Variables** (or **Settings** → **Variables**).
 

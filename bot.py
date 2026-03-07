@@ -24,6 +24,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import database as db
 import messages as msg
 
+# ── ENV CHECK (fail fast with a clear message on Railway / production) ─────────
+_REQUIRED = ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_APP_TOKEN"]
+_missing = [k for k in _REQUIRED if not os.environ.get(k)]
+if _missing:
+    print("Missing required env vars:", ", ".join(_missing))
+    print("Set them in Railway → your service → Variables (or in .env locally).")
+    raise SystemExit(1)
+
 # ── APP INIT ──────────────────────────────────────────────────────────────────
 
 app = App(
