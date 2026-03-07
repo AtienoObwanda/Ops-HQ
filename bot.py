@@ -20,9 +20,21 @@ from datetime import datetime
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import database as db
 import messages as msg
+
+try:
+    import jira_client as jira
+except ImportError:
+    jira = None
+try:
+    import ai_client as ai
+except ImportError:
+    ai = None
 
 # ── ENV CHECK (fail fast with a clear message on Railway / production) ─────────
 _REQUIRED = ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_APP_TOKEN"]
@@ -239,35 +251,138 @@ def handle_resolve(ack, respond, command, body):
         return
 
     db.update_project(project["id"], health="On Track", notes="")
-    db.add_update(project["id"], "✅ Marked back on track", author_slack=body["user_id"], author_name=body.get("user_name"))
+    db.add_update(project["id"], "✅ Back on track", author_slack=body["user_id"], author_name=body.get("user_name"))
+    respond(text="Resolved", blocks=[msg._section(f"✅ *{project['client']}* is back on track")])
 
-    respond(text="Resolved", blocks=[
-        msg._section(f"✅ *{project['client']}* is back *On Track*"),
+
+# ── /assign ───────────────────────────────────────────────────────────────────
+
+@app.command("/assign")
+def handle_assign(ack, respond, command, body):
+    ack()
+    text = (command.get("text") or "").strip()
+    query, remainder = _parse_quoted(text)
+
+    mention = re.search(r"<@([A-Z0-9]+)(?:\|([^>]+))?>", remainder)
+    if not mention:
+        respond("Usage: `/assign \"Client Name\" @engineer`")
+        return
+
+    new_owner_slack = mention.group(1)
+    new_owner_name  = mention.group(2) or ""
+
+    project = db.find_project(query)
+    if not project:
+        respond(f"No project matching `{query}`")
+        return
+
+    old_owner = project["owner_name"] or "unassigned"
+    db.update_project(project["id"], owner_slack=new_owner_slack, owner_name=new_owner_name)
+    db.add_update(
+        project["id"],
+        f"Reassigned: {old_owner} → {new_owner_name or new_owner_slack}",
+        author_slack=body["user_id"],
+        author_name=body.get("user_name")
+    )
+    respond(text="Assigned", blocks=[
+        msg._section(f"👤 *{project['client']}* reassigned\n{old_owner} → <@{new_owner_slack}>"),
+        msg._context("They'll get 4pm check-in DMs from now on."),
     ])
+
+
+# ── /clientupdate ─────────────────────────────────────────────────────────────
+
+@app.command("/clientupdate")
+def handle_clientupdate(ack, respond, command, body):
+    ack()
+    query = (command.get("text") or "").strip().strip('"')
+    if not query:
+        respond("Usage: `/clientupdate \"Client Name\"`")
+        return
+
+    project = db.find_project(query)
+    if not project:
+        respond(f"No project matching `{query}`")
+        return
+
+    respond(text="Drafting...", blocks=[msg._section(f"✍️ Drafting update for *{project['client']}*...")])
+
+    try:
+        recent_updates = db.recent_updates(project["id"], limit=5)
+        open_issues    = db.open_issues(limit=5)
+        draft = ai.generate_client_update(
+            dict(project),
+            [dict(u) for u in recent_updates],
+            [dict(i) for i in open_issues]
+        )
+        app.client.chat_postMessage(
+            channel=body["channel_id"],
+            text="Client Update Draft",
+            blocks=[
+                msg._header(f"📧 Client Update — {project['client']}"),
+                msg._section("*Draft — review before sending:*"),
+                msg._section(f"```{draft}```"),
+                msg._divider(),
+                msg._context("CS Bot · Edit as needed before sending"),
+            ]
+        )
+    except Exception as e:
+        app.client.chat_postMessage(channel=body["channel_id"], text=f"❌ Error: {e}")
+
+
+# ── /meetingprep ──────────────────────────────────────────────────────────────
+
+@app.command("/meetingprep")
+def handle_meetingprep(ack, respond, command, body):
+    ack()
+    meeting_type = (command.get("text") or "").strip().lower().replace(" ", "_")
+    valid = ["sales_sync", "product_eng", "client_call"]
+    if meeting_type not in valid:
+        respond("Usage: `/meetingprep <type>`\nTypes: `sales_sync` · `product_eng` · `client_call`")
+        return
+
+    respond(text="Prepping...", blocks=[msg._section(f"⏳ Generating talking points...")])
+
+    try:
+        projects = db.all_projects()
+        issues   = db.open_issues()
+        prep     = ai.generate_meeting_prep(meeting_type, [dict(p) for p in projects], [dict(i) for i in issues])
+        label    = {"sales_sync": "Sales Sync", "product_eng": "Product & Eng", "client_call": "Client Call"}[meeting_type]
+        app.client.chat_postMessage(
+            channel=body["channel_id"],
+            text="Meeting Prep",
+            blocks=[
+                msg._header(f"🎯 {label} — Talking Points"),
+                msg._section(prep),
+                msg._divider(),
+                msg._context("CS Bot · Customize before your meeting"),
+            ]
+        )
+    except Exception as e:
+        app.client.chat_postMessage(channel=body["channel_id"], text=f"❌ Error: {e}")
 
 
 # ── /brief ────────────────────────────────────────────────────────────────────
 
 @app.command("/brief")
-def handle_brief(ack, respond, command):
+def handle_brief(ack, respond):
     ack()
-    stale = db.stale_projects(hours=24)
-    at_risk = db.at_risk_projects()
+    stale        = db.stale_projects(hours=24)
+    at_risk      = db.at_risk_projects()
     all_projects = db.all_projects()
-    yesterday_dumps = db.brain_dumps_yesterday()
-    today_dumps = db.brain_dumps_today()
-    respond(text="Morning Brief", blocks=msg.morning_brief(stale, at_risk, all_projects, brain_dumps=yesterday_dumps, brain_dumps_today=today_dumps))
+    jira_data    = jira.get_jira_brief_data()
+    respond(text="Morning Brief", blocks=msg.morning_brief(stale, at_risk, all_projects, jira_data=jira_data))
 
 
 # ── /report ───────────────────────────────────────────────────────────────────
 
 @app.command("/report")
-def handle_report(ack, respond, command):
+def handle_report(ack, respond):
     ack()
     all_projects = db.all_projects(exclude_done=False)
-    at_risk = db.at_risk_projects()
-    issues = db.issue_patterns()
-    respond(text="Ops Brain Report", blocks=msg.coo_report(all_projects, at_risk, issues))
+    at_risk      = db.at_risk_projects()
+    issues       = db.issue_patterns()
+    respond(text="CS Report", blocks=msg.coo_report(all_projects, at_risk, issues))
 
 
 @app.command("/weekreport")
@@ -500,29 +615,51 @@ def send_recon_iut_reminder():
 
 
 def send_engineer_checkins():
-    """4pm daily — DM each engineer about their projects."""
     projects = db.all_projects()
     if not projects:
         return
-
-    # Group by owner
     by_owner = {}
     for p in projects:
         if p["owner_slack"]:
             by_owner.setdefault(p["owner_slack"], {"name": p["owner_name"] or "there", "projects": []})
             by_owner[p["owner_slack"]]["projects"].append(p)
-
     for slack_id, data in by_owner.items():
-        blocks = msg.engineer_checkin_dm(data["name"], data["projects"])
         try:
-            app.client.chat_postMessage(
-                channel=slack_id,  # DM by user ID
-                text="📬 Daily check-in",
-                blocks=blocks
-            )
-            print(f"✅ Check-in DM sent to {slack_id}")
+            blocks = msg.engineer_checkin_dm(data["name"], data["projects"])
+            app.client.chat_postMessage(channel=slack_id, text="📬 Daily check-in", blocks=blocks)
+            print(f"✅ Check-in DM → {slack_id}")
         except Exception as e:
-            print(f"❌ Failed to DM {slack_id}: {e}")
+            print(f"❌ DM failed for {slack_id}: {e}")
+
+
+def send_weekly_digest():
+    """Friday 5pm — weekly pattern digest (DM or channel)."""
+    dest = _brief_destination()
+    if not dest:
+        return
+    if not ai:
+        print("⚠️  ai_client not available — skipping weekly digest")
+        return
+    try:
+        patterns    = db.issue_patterns()
+        reflections = db.reflections_this_week()
+        stale       = db.stale_projects(hours=48)
+        at_risk     = db.at_risk_projects()
+        digest      = ai.generate_pattern_digest(
+            [dict(r) for r in patterns],
+            [dict(r) for r in reflections],
+            [dict(p) for p in stale],
+            [dict(p) for p in at_risk],
+        )
+        _post_blocks(dest, [
+            msg._header("📊 Weekly Pattern Digest"),
+            msg._section(digest),
+            msg._divider(),
+            msg._context("Every Friday · Ops Brain"),
+        ], text="📊 Weekly Digest")
+        print("✅ Weekly digest posted")
+    except Exception as e:
+        print(f"❌ Weekly digest failed: {e}")
 
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
@@ -538,8 +675,9 @@ if __name__ == "__main__":
     scheduler.add_job(send_week_report, "cron", day_of_week="sat", hour=9, minute=0)
     scheduler.add_job(send_month_report, "cron", day=1, hour=9, minute=0)
     scheduler.add_job(send_recon_iut_reminder, "cron", hour=10, minute=0, day_of_week="mon-fri")
+    scheduler.add_job(send_weekly_digest, "cron", day_of_week="fri", hour=17, minute=0)
     scheduler.start()
-    print("⏰ Scheduler started — briefs 9am, check-ins 4pm, brain-dump Mon–Fri 6pm, recon IUT Mon–Fri 10am, week Sat 9am, month 1st 9am")
+    print("⏰ Scheduler: briefs 9am · check-ins 4pm · brain-dump Mon–Fri 6pm · recon Mon–Fri 10am · week Sat 9am · month 1st 9am · digest Fri 5pm")
 
     # Start bot
     print("🤖 Ops Brain starting...")

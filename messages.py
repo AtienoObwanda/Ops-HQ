@@ -41,7 +41,7 @@ def _context(text):
 
 # ── MORNING BRIEF ─────────────────────────────────────────────────────────────
 
-def morning_brief(stale, at_risk, all_projects, brain_dumps=None, brain_dumps_today=None):
+def morning_brief(stale, at_risk, all_projects, brain_dumps=None, brain_dumps_today=None, jira_data=None):
     today = datetime.now().strftime("%A, %d %b %Y")
     blocks = [
         _header(f"☀️  Ops Brain Morning Brief — {today}"),
@@ -97,6 +97,32 @@ def morning_brief(stale, at_risk, all_projects, brain_dumps=None, brain_dumps_to
             owner = f"<@{p['owner_slack']}>" if p["owner_slack"] else p["owner_name"] or "—"
             lines.append(f"{h_emoji} {s_emoji} *{p['client']}* · {p['stage']} · {owner}")
         blocks.append(_section("\n".join(lines)))
+
+    # Jira section
+    if jira_data and jira_data.get("configured"):
+        jira_stale   = jira_data.get("stale", [])
+        jira_blocked = jira_data.get("blocked", [])
+        jira_changes = jira_data.get("changes", [])
+
+        if jira_stale or jira_blocked:
+            blocks.append(_divider())
+            blocks.append(_section("*🔧 Jira — Needs Attention*"))
+
+        if jira_blocked:
+            blocked_lines = [f"• 🔴 <{t['url']}|{t['key']}> *{t['summary']}* — {t['assignee']}" for t in jira_blocked]
+            blocks.append(_section("*Blocked*\n" + "\n".join(blocked_lines)))
+
+        if jira_stale:
+            stale_lines = [f"• ⏰ <{t['url']}|{t['key']}> *{t['summary']}* — {t['assignee']} · {t['stale_hours']}h ago" for t in jira_stale[:5]]
+            blocks.append(_section("*Stale (no update 24h+)*\n" + "\n".join(stale_lines)))
+
+        if jira_changes:
+            change_lines = [
+                f"• <{t['url']}|{t['key']}> {t.get('from_status', '?')} → *{t.get('to_status', t['status'])}* · {t['assignee']}"
+                for t in jira_changes[:5]
+            ]
+            blocks.append(_divider())
+            blocks.append(_section("*🔄 Jira Status Changes (last 24h)*\n" + "\n".join(change_lines)))
 
     blocks.append(_divider())
     blocks.append(_context("Reply with `/brief` anytime for a fresh view · `/report` for COO summary"))

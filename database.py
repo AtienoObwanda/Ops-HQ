@@ -54,6 +54,15 @@ def init_db():
             resolved_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS reflections (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            date      TEXT NOT NULL DEFAULT (date('now')),
+            wins      TEXT,
+            blockers  TEXT,
+            lessons   TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS checkins (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             engineer_slack TEXT NOT NULL,
@@ -357,3 +366,14 @@ def projects_by_stage():
 
 if __name__ == "__main__":
     init_db()
+
+
+def reflections_this_week():
+    """Pull EOD reflections from the last 7 days for the weekly digest."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT * FROM reflections
+               WHERE julianday('now') - julianday(date) <= 7
+               ORDER BY date DESC"""
+        ).fetchall()
+# Note: reflections table is created via init_db — add it if missing
