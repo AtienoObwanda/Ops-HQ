@@ -6,7 +6,11 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 
-DB_PATH = os.environ.get("CS_BOT_DB", "cs_bot.db")
+# Use Railway volume path when set so the DB persists across deploys (otherwise each deploy = new container = empty disk)
+_default_db = "cs_bot.db"
+if os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") and os.environ.get("CS_BOT_DB", _default_db) == _default_db:
+    _default_db = os.path.join(os.environ["RAILWAY_VOLUME_MOUNT_PATH"], "cs_bot.db")
+DB_PATH = os.environ.get("CS_BOT_DB", _default_db)
 
 
 def get_conn():
@@ -81,7 +85,64 @@ def init_db():
                 conn.execute(f"ALTER TABLE projects ADD COLUMN {col} {typ}")
             except sqlite3.OperationalError:
                 pass
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS eisenhower_tasks (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                title         TEXT NOT NULL,
+                quadrant      TEXT NOT NULL,
+                assignee_name TEXT,
+                assignee_slack TEXT,
+                jira_key      TEXT,
+                due_date      TEXT,
+                notes         TEXT,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        """)
     print(f"✅ DB initialised at {DB_PATH}")
+
+# ── EISENHOWER (planning / prioritising) ───────────────────────────────────────
+
+EISENHOWER_QUADRANTS = [
+    "urgent_important",      # Do first
+    "important_not_urgent",   # Schedule
+    "urgent_not_important",  # Delegate
+    "neither",               # Eliminate / later
+]
+
+
+def add_eisenhower_task(title, quadrant, assignee_name=None, assignee_slack=None, jira_key=None, due_date=None, notes=None):
+    if quadrant not in EISENHOWER_QUADRANTS:
+        quadrant = "important_not_urgent"
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO eisenhower_tasks (title, quadrant, assignee_name, assignee_slack, jira_key, due_date, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (title, quadrant, assignee_name, assignee_slack, jira_key, due_date, notes),
+        )
+        return cur.lastrowid
+
+
+def get_eisenhower_tasks():
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT * FROM eisenhower_tasks ORDER BY quadrant, created_at"""
+        ).fetchall()
+
+
+def update_eisenhower_task(task_id, **kwargs):
+    allowed = {"title", "quadrant", "assignee_name", "assignee_slack", "jira_key", "due_date", "notes"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [task_id]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE eisenhower_tasks SET {set_clause} WHERE id = ?", values)
+
+
+def delete_eisenhower_task(task_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM eisenhower_tasks WHERE id = ?", (task_id,))
 
 
 # ── PROJECTS ──────────────────────────────────────────────────────────────────

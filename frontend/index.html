@@ -648,6 +648,38 @@
   .grooming-table .jira-key:hover { text-decoration: underline; }
   .placeholder-card { border-style: dashed; opacity: 0.9; }
 
+  .eisenhower-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 16px;
+  }
+  .eisenhower-quadrant {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    min-height: 200px;
+  }
+  .eisenhower-quadrant-title { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+  .eisenhower-quadrant-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; font-family: var(--mono); }
+  .eisenhower-tasks { display: flex; flex-direction: column; gap: 8px; }
+  .eisenhower-task {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .eisenhower-task-title { font-weight: 600; flex: 1; min-width: 0; }
+  .eisenhower-task-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .eisenhower-task-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
   .health-dot {
     width: 8px; height: 8px;
     border-radius: 50%;
@@ -704,6 +736,9 @@
     </div>
     <div class="nav-item" onclick="nav('docket')" id="nav-docket">
       <span class="nav-icon">📌</span> My Docket
+    </div>
+    <div class="nav-item" onclick="nav('eisenhower')" id="nav-eisenhower">
+      <span class="nav-icon">⊞</span> Eisenhower
     </div>
     <div class="nav-item" onclick="nav('goals')" id="nav-goals">
       <span class="nav-icon">🎯</span> Team Goals
@@ -775,11 +810,12 @@
       <div class="page-header">
         <div>
           <div class="page-title">Ticket Grooming</div>
-          <div class="page-sub">All Jira tickets — ownership and status at a glance</div>
+          <div class="page-sub">All Jira tickets — filter by status, request updates (engineers get Slack DM)</div>
         </div>
         <button class="btn-sm accent" onclick="loadGrooming()">↻ Refresh</button>
       </div>
       <div class="card">
+        <div id="grooming-filters" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"></div>
         <div id="grooming-list"></div>
       </div>
     </div>
@@ -819,6 +855,39 @@
           <div class="card-title">📊 Monthly summary (last 30 days)</div>
           <div class="page-sub" style="margin-bottom:12px">What was shipped, resolved, issues logged, blockers</div>
           <div id="monthly-summary"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EISENHOWER (planning / prioritising) -->
+    <div class="page" id="page-eisenhower">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Eisenhower Matrix</div>
+          <div class="page-sub">Plan and prioritise — once assigned, tracking runs as programmed (brief, updates, grooming)</div>
+        </div>
+        <button class="btn-sm accent" onclick="openAddEisenhowerTask()">+ Add task</button>
+      </div>
+      <div class="eisenhower-grid">
+        <div class="eisenhower-quadrant" data-quadrant="urgent_important">
+          <div class="eisenhower-quadrant-title">🔴 Urgent · Important</div>
+          <div class="eisenhower-quadrant-sub">Do first</div>
+          <div id="eisenhower-urgent-important" class="eisenhower-tasks"></div>
+        </div>
+        <div class="eisenhower-quadrant" data-quadrant="important_not_urgent">
+          <div class="eisenhower-quadrant-title">🟢 Important · Not urgent</div>
+          <div class="eisenhower-quadrant-sub">Schedule</div>
+          <div id="eisenhower-important-not-urgent" class="eisenhower-tasks"></div>
+        </div>
+        <div class="eisenhower-quadrant" data-quadrant="urgent_not_important">
+          <div class="eisenhower-quadrant-title">🟡 Urgent · Not important</div>
+          <div class="eisenhower-quadrant-sub">Delegate</div>
+          <div id="eisenhower-urgent-not-important" class="eisenhower-tasks"></div>
+        </div>
+        <div class="eisenhower-quadrant" data-quadrant="neither">
+          <div class="eisenhower-quadrant-title">⚪ Neither</div>
+          <div class="eisenhower-quadrant-sub">Eliminate / later</div>
+          <div id="eisenhower-neither" class="eisenhower-tasks"></div>
         </div>
       </div>
     </div>
@@ -966,6 +1035,25 @@
   </div>
 </div>
 
+<!-- REQUEST UPDATE MODAL (Jira → Slack DM) -->
+<div class="modal-overlay" id="request-update-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">Request update</div>
+    <p id="ru-ticket-info" style="font-size:13px;color:var(--muted);margin-bottom:12px;"></p>
+    <div class="form-field">
+      <label class="form-label">Assign / notify engineer (they get a Slack DM)</label>
+      <select class="form-select" id="ru-engineer">
+        <option value="">Select engineer...</option>
+      </select>
+      <p style="font-size:11px;color:var(--muted);margin-top:6px">Jira and Slack names don’t need to match — set JIRA_TO_SLACK in env.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('request-update-modal')">Cancel</button>
+      <button class="btn-accent" onclick="submitRequestUpdate()">Send Slack DM</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROJECT DETAIL MODAL (updates + status) -->
 <div class="modal-overlay" id="project-detail-modal">
   <div class="modal" style="max-width:520px">
@@ -980,6 +1068,45 @@
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('project-detail-modal')">Close</button>
       <button class="btn-accent" onclick="submitProjectUpdate()">Post update</button>
+    </div>
+  </div>
+</div>
+
+<!-- EISENHOWER TASK MODAL -->
+<div class="modal-overlay" id="eisenhower-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-title" id="eisenhower-modal-title">Add task</div>
+    <input type="hidden" id="eisenhower-task-id" value="" />
+    <div class="form-field">
+      <label class="form-label">Task title</label>
+      <input class="form-input" id="eisenhower-title" placeholder="e.g. Fix NAO-123 reconciliation bug" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Quadrant</label>
+      <select class="form-select" id="eisenhower-quadrant">
+        <option value="urgent_important">Urgent · Important (Do first)</option>
+        <option value="important_not_urgent">Important · Not urgent (Schedule)</option>
+        <option value="urgent_not_important">Urgent · Not important (Delegate)</option>
+        <option value="neither">Neither (Eliminate / later)</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Assign to (optional)</label>
+      <select class="form-select" id="eisenhower-assignee">
+        <option value="">—</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Jira key (optional)</label>
+      <input class="form-input" id="eisenhower-jira" placeholder="e.g. NAO-123" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Due date (optional)</label>
+      <input class="form-input" type="date" id="eisenhower-due" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('eisenhower-modal')">Cancel</button>
+      <button class="btn-accent" onclick="submitEisenhowerTask()">Save</button>
     </div>
   </div>
 </div>
@@ -1097,6 +1224,7 @@ function nav(page) {
     grooming: loadGrooming,
     workload: loadWorkload,
     docket:   loadDocket,
+    eisenhower: loadEisenhower,
     issues:   loadIssues,
     goals:    loadGoals,
     ai:       loadAITools,
@@ -1241,28 +1369,88 @@ async function loadPipeline() {
 }
 
 // ── TICKET GROOMING (Jira) ────────────────────────────────────────────────────
+let _groomingTickets = [];
+let _groomingEngineers = [];
+
 async function loadGrooming() {
-  const data = await api("GET", "/api/jira/grooming");
+  const [data, engineers] = await Promise.all([
+    api("GET", "/api/jira/grooming"),
+    api("GET", "/api/jira/engineers"),
+  ]);
   if (!data) return;
   const el = document.getElementById("grooming-list");
+  const filterEl = document.getElementById("grooming-filters");
   if (!data.configured) {
+    filterEl.innerHTML = "";
     el.innerHTML = `<div class="empty-state">Jira not configured. Set JIRA_* env vars to see tickets here.</div>`;
     return;
   }
-  const tickets = data.tickets || [];
-  el.innerHTML = tickets.length
-    ? `<table class="grooming-table"><thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Updated</th></tr></thead><tbody>${
-        tickets.map(t => `
-          <tr>
-            <td><a href="${t.url}" target="_blank" rel="noopener" class="jira-key">${t.key}</a></td>
-            <td class="jira-summary">${t.summary}</td>
-            <td><span class="tag tag-gray">${t.status}</span></td>
-            <td>${t.assignee || "—"}</td>
-            <td style="font-size:11px;color:var(--muted);font-family:var(--mono)">${t.updated ? t.updated.slice(0,10) : "—"}</td>
-          </tr>
-        `).join("")
-      }</tbody></table>`
-    : `<div class="empty-state">No open Jira tickets in configured projects.</div>`;
+  _groomingTickets = data.tickets || [];
+  _groomingEngineers = Array.isArray(engineers) ? engineers : [];
+  const statuses = [...new Set(_groomingTickets.map(t => t.status).filter(Boolean))].sort();
+  filterEl.innerHTML = `
+    <span style="font-size:12px;color:var(--muted);font-weight:600">Status:</span>
+    <select class="form-select" id="grooming-status-filter" style="width:auto;min-width:140px" onchange="filterGroomingTable()">
+      <option value="">All</option>
+      ${statuses.map(s => `<option value="${s.replace(/"/g, "&quot;")}">${s}</option>`).join("")}
+    </select>
+  `;
+  filterGroomingTable();
+}
+
+function filterGroomingTable() {
+  const filterSelect = document.getElementById("grooming-status-filter");
+  const statusFilter = filterSelect ? filterSelect.value : "";
+  const tickets = statusFilter
+    ? _groomingTickets.filter(t => t.status === statusFilter)
+    : _groomingTickets;
+  const el = document.getElementById("grooming-list");
+  if (!tickets.length) {
+    el.innerHTML = `<div class="empty-state">No tickets${statusFilter ? " in " + statusFilter : ""}.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <table class="grooming-table">
+      <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Updated</th><th>Action</th></tr></thead>
+      <tbody>${tickets.map(t => `
+        <tr>
+          <td><a href="${t.url}" target="_blank" rel="noopener" class="jira-key">${t.key}</a></td>
+          <td class="jira-summary">${t.summary}</td>
+          <td><span class="tag tag-gray">${t.status}</span></td>
+          <td>${t.assignee || "—"}</td>
+          <td style="font-size:11px;color:var(--muted);font-family:var(--mono)">${t.updated ? t.updated.slice(0,10) : "—"}</td>
+          <td><button type="button" class="btn-sm accent" onclick="openRequestUpdateModal('${(t.key || "").replace(/'/g, "\\'")}')">Request update</button></td>
+        </tr>
+      `).join("")}</tbody>
+    </table>`;
+}
+
+function openRequestUpdateModal(ticketKey) {
+  const t = _groomingTickets.find(x => x.key === ticketKey) || { key: ticketKey, summary: "", url: "" };
+  window._ruTicket = t;
+  document.getElementById("ru-ticket-info").textContent = `${t.key}: ${t.summary || "—"}`;
+  const sel = document.getElementById("ru-engineer");
+  sel.innerHTML = `<option value="">Select engineer...</option>` +
+    _groomingEngineers.map(e => `<option value="${e.slack_id}">${e.jira_name} (${e.slack_name})</option>`).join("");
+  document.getElementById("request-update-modal").classList.add("open");
+}
+
+async function submitRequestUpdate() {
+  const t = window._ruTicket;
+  const slackId = document.getElementById("ru-engineer").value;
+  if (!t || !slackId) return;
+  const res = await api("POST", "/api/jira/request-update", {
+    ticket_key: t.key,
+    ticket_summary: t.summary,
+    ticket_url: t.url,
+    slack_user_id: slackId,
+  });
+  if (res && res.ok) {
+    showToast("Slack DM sent");
+    closeModal("request-update-modal");
+  } else {
+    showToast(res?.error || "Failed to send DM");
+  }
 }
 
 async function loadDocket() {
@@ -1283,6 +1471,104 @@ async function loadDocket() {
     ${s.length ? `<div style="margin-top:12px"><strong>Projects moved to Done:</strong> ${s.map(p => p.client).join(", ") || "—"}</div>` : ""}
     ${blockers.length ? `<div style="margin-top:8px;font-size:12px;color:var(--muted)">Blockers from reflections: ${blockers.map(r => r.date + ": " + (r.blockers || "").slice(0,80)).join("; ")}</div>` : ""}
   `;
+}
+
+// ── EISENHOWER ─────────────────────────────────────────────────────────────────
+const EISENHOWER_QUADRANTS = ["urgent_important", "important_not_urgent", "urgent_not_important", "neither"];
+let _eisenhowerEngineers = [];
+
+async function loadEisenhower() {
+  const [tasks, engineers] = await Promise.all([
+    api("GET", "/api/eisenhower"),
+    api("GET", "/api/jira/engineers"),
+  ]);
+  if (!tasks) return;
+  _eisenhowerEngineers = Array.isArray(engineers) ? engineers : [];
+  const byQuad = {};
+  EISENHOWER_QUADRANTS.forEach(q => byQuad[q] = []);
+  (tasks || []).forEach(t => {
+    if (byQuad[t.quadrant] !== undefined) byQuad[t.quadrant].push(t);
+  });
+  EISENHOWER_QUADRANTS.forEach(q => {
+    const el = document.getElementById(`eisenhower-${q.replace(/_/g, "-")}`);
+    if (!el) return;
+    const list = byQuad[q] || [];
+    el.innerHTML = list.length
+      ? list.map(t => `
+          <div class="eisenhower-task">
+            <div class="eisenhower-task-title">${t.title}${t.jira_key ? ` <span class="eisenhower-task-meta">${t.jira_key}</span>` : ""}</div>
+            <div class="eisenhower-task-meta">${t.assignee_name || "—"}${t.due_date ? " · " + t.due_date : ""}</div>
+            <div class="eisenhower-task-actions">
+              <select class="form-select" style="width:auto;font-size:11px;padding:4px 8px" onchange="moveEisenhowerQuadrant(${t.id}, this.value)" title="Move to">
+                ${EISENHOWER_QUADRANTS.map(o => `<option value="${o}" ${o === t.quadrant ? "selected" : ""}>${o.replace(/_/g, " ")}</option>`).join("")}
+              </select>
+              <button type="button" class="btn-sm" style="padding:4px 8px" onclick="openAddEisenhowerTask(${t.id})" title="Edit">Edit</button>
+              <button type="button" class="btn-sm" style="padding:4px 8px" onclick="deleteEisenhowerTask(${t.id})" title="Delete">✕</button>
+            </div>
+          </div>
+        `).join("")
+      : `<div class="empty-state">No tasks</div>`;
+  });
+}
+
+async function openAddEisenhowerTask(editId) {
+  document.getElementById("eisenhower-modal-title").textContent = editId ? "Edit task" : "Add task";
+  document.getElementById("eisenhower-task-id").value = editId || "";
+  document.getElementById("eisenhower-title").value = "";
+  document.getElementById("eisenhower-quadrant").value = "important_not_urgent";
+  document.getElementById("eisenhower-jira").value = "";
+  document.getElementById("eisenhower-due").value = "";
+  const sel = document.getElementById("eisenhower-assignee");
+  sel.innerHTML = `<option value="">—</option>` +
+    _eisenhowerEngineers.map(e => `<option value="${e.slack_id}" data-name="${(e.slack_name || e.jira_name).replace(/"/g, "&quot;")}">${e.jira_name} (${e.slack_name})</option>`).join("");
+  sel.value = "";
+  if (editId) {
+    const tasks = await api("GET", "/api/eisenhower");
+    const t = (tasks || []).find(x => x.id === editId);
+    if (t) {
+      document.getElementById("eisenhower-title").value = t.title || "";
+      document.getElementById("eisenhower-quadrant").value = t.quadrant || "important_not_urgent";
+      document.getElementById("eisenhower-jira").value = t.jira_key || "";
+      document.getElementById("eisenhower-due").value = t.due_date || "";
+      const opt = [...sel.options].find(o => o.value === t.assignee_slack);
+      if (opt) sel.value = t.assignee_slack;
+    }
+  }
+  document.getElementById("eisenhower-modal").classList.add("open");
+}
+
+async function submitEisenhowerTask() {
+  const id = document.getElementById("eisenhower-task-id").value;
+  const title = document.getElementById("eisenhower-title").value.trim();
+  if (!title) return;
+  const quadrant = document.getElementById("eisenhower-quadrant").value;
+  const assigneeSel = document.getElementById("eisenhower-assignee");
+  const assigneeSlack = assigneeSel.value || null;
+  const assigneeName = assigneeSlack ? (assigneeSel.selectedOptions[0]?.getAttribute("data-name") || assigneeSel.selectedOptions[0]?.text) : null;
+  const jiraKey = document.getElementById("eisenhower-jira").value.trim() || null;
+  const dueDate = document.getElementById("eisenhower-due").value || null;
+  if (id) {
+    await api("PATCH", `/api/eisenhower/${id}`, { title, quadrant, assignee_name: assigneeName, assignee_slack: assigneeSlack, jira_key: jiraKey, due_date: dueDate });
+    showToast("Task updated");
+  } else {
+    await api("POST", "/api/eisenhower", { title, quadrant, assignee_name: assigneeName, assignee_slack: assigneeSlack, jira_key: jiraKey, due_date: dueDate });
+    showToast("Task added");
+  }
+  closeModal("eisenhower-modal");
+  loadEisenhower();
+}
+
+async function moveEisenhowerQuadrant(id, quadrant) {
+  await api("PATCH", `/api/eisenhower/${id}`, { quadrant });
+  showToast("Moved");
+  loadEisenhower();
+}
+
+async function deleteEisenhowerTask(id) {
+  if (!confirm("Delete this task?")) return;
+  await api("DELETE", `/api/eisenhower/${id}`);
+  showToast("Task deleted");
+  loadEisenhower();
 }
 
 // ── WORKLOAD ──────────────────────────────────────────────────────────────────

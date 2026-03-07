@@ -215,6 +215,66 @@ def jira_grooming():
     return jsonify({"configured": jira.is_configured(), "tickets": tickets})
 
 
+@app.route("/api/jira/engineers", methods=["GET"])
+@_require_auth()
+def jira_engineers():
+    """Jira display name → Slack mapping for request-update dropdown (names don't need to match)."""
+    mapping = jira.get_engineer_mapping()
+    return jsonify(mapping)
+
+
+@app.route("/api/jira/request-update", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def jira_request_update():
+    """
+    Send a Slack DM to the given user asking for an update on the Jira ticket.
+    Jira and Slack names don't need to match — use JIRA_TO_SLACK mapping.
+    """
+    data = request.json or {}
+    ticket_key = (data.get("ticket_key") or "").strip()
+    ticket_summary = (data.get("ticket_summary") or "").strip()
+    ticket_url = (data.get("ticket_url") or "").strip()
+    slack_user_id = (data.get("slack_user_id") or "").strip()
+    if not ticket_key or not slack_user_id:
+        return jsonify({"error": "ticket_key and slack_user_id required"}), 400
+    token = os.environ.get("SLACK_BOT_TOKEN")
+    if not token:
+        return jsonify({"error": "SLACK_BOT_TOKEN not set"}), 503
+    try:
+        import requests as req
+        # Open DM with user (get channel ID)
+        r = req.post(
+            "https://slack.com/api/conversations.open",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"users": [slack_user_id]},
+            timeout=10,
+        )
+        r.raise_for_status()
+        body = r.json()
+        if not body.get("ok"):
+            return jsonify({"error": body.get("error", "conversations.open failed")}), 400
+        channel_id = body.get("channel", {}).get("id")
+        if not channel_id:
+            return jsonify({"error": "No channel id"}), 400
+        text = f"📋 *Update requested* for *{ticket_key}*: {ticket_summary or 'No summary'}\n"
+        if ticket_url:
+            text += f"<{ticket_url}|Open in Jira>\n"
+        text += "\nPlease share a quick status update (reply here or use `/brief`)."
+        msg = req.post(
+            "https://slack.com/api/chat.postMessage",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"channel": channel_id, "text": text, "mrkdwn": True},
+            timeout=10,
+        )
+        msg.raise_for_status()
+        out = msg.json()
+        if not out.get("ok"):
+            return jsonify({"error": out.get("error", "chat.postMessage failed")}), 400
+        return jsonify({"ok": True, "message": "DM sent"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/issues", methods=["GET"])
 @_require_auth()
 def get_issues():
@@ -335,6 +395,49 @@ def ai_digest():
         return jsonify({"digest": digest})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ── EISENHOWER (planning / prioritising) ───────────────────────────────────────
+
+@app.route("/api/eisenhower", methods=["GET"])
+@_require_auth()
+def get_eisenhower():
+    tasks = db.get_eisenhower_tasks()
+    return jsonify([dict(t) for t in tasks])
+
+
+@app.route("/api/eisenhower", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def create_eisenhower_task():
+    data = request.json or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    tid = db.add_eisenhower_task(
+        title=title,
+        quadrant=data.get("quadrant", "important_not_urgent"),
+        assignee_name=data.get("assignee_name"),
+        assignee_slack=data.get("assignee_slack"),
+        jira_key=(data.get("jira_key") or "").strip() or None,
+        due_date=(data.get("due_date") or "").strip() or None,
+        notes=(data.get("notes") or "").strip() or None,
+    )
+    return jsonify({"id": tid}), 201
+
+
+@app.route("/api/eisenhower/<int:tid>", methods=["PATCH"])
+@_require_auth(roles=["admin", "engineer"])
+def update_eisenhower_task(tid):
+    data = request.json or {}
+    db.update_eisenhower_task(tid, **data)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/eisenhower/<int:tid>", methods=["DELETE"])
+@_require_auth(roles=["admin", "engineer"])
+def delete_eisenhower_task(tid):
+    db.delete_eisenhower_task(tid)
+    return jsonify({"ok": True})
 
 
 # ── TEAM / WORKLOAD ───────────────────────────────────────────────────────────

@@ -176,6 +176,7 @@ def _parse_ticket(issue):
         "status":     fields.get("status", {}).get("name", ""),
         "priority":   fields.get("priority", {}).get("name", "Medium"),
         "assignee":   assignee.get("displayName", "Unassigned"),
+        "assignee_account_id": assignee.get("accountId"),
         "updated":    fields.get("updated", ""),
         "url":        f"{JIRA_BASE_URL}/browse/{issue.get('key', '')}",
         "stale_hours": _hours_since(fields.get("updated", "")),
@@ -217,6 +218,28 @@ def get_grooming_tickets(max_results=80):
     except Exception as e:
         print(f"⚠️  Jira grooming tickets error: {e}")
         return []
+
+
+# ── Jira ↔ Slack mapping (names don't need to match) ───────────────────────────
+# JIRA_TO_SLACK = Felix:Uxxx:Kolakodhek,Joy:Uyyy:Joy,Mark:Uzzz:Kibocha,...
+# Format: jira_display_name:slack_user_id[:slack_display_name]
+def get_engineer_mapping():
+    """
+    Returns list of { jira_name, slack_id, slack_name } for request-update dropdown.
+    Slack_name is how they appear on Slack (can differ from Jira).
+    """
+    raw = os.environ.get("JIRA_TO_SLACK", "").strip()
+    if not raw:
+        return []
+    out = []
+    for entry in raw.split(","):
+        parts = [p.strip() for p in entry.strip().split(":") if p.strip()]
+        if len(parts) >= 2:
+            jira_name = parts[0]
+            slack_id = parts[1]
+            slack_name = parts[2] if len(parts) > 2 else jira_name
+            out.append({"jira_name": jira_name, "slack_id": slack_id, "slack_name": slack_name})
+    return out
 
 
 def get_jira_brief_data():

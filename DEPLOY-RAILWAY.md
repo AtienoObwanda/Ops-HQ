@@ -68,9 +68,25 @@ Add every variable from your local `.env` (copy the **values**, not the placehol
 | `CS_BRIEF_SLACK_USER_ID` | `U0123ABC` | Yes (for DMs) |
 | `CS_COMMAND_CHANNEL` | `C0123ABC` | Optional (if using channel instead of DM) |
 | `RECON_SLACK_IDS` | `U123,U456` | Optional |
-| `CS_BOT_DB` | `cs_bot.db` | Optional (default) |
+| `CS_BOT_DB` | `cs_bot.db` | Optional (see below) |
 
 - Do **not** commit your real `.env` file.
+
+### Why does the DB reset on every deploy?
+
+Each deploy runs in a **new container** with an **ephemeral filesystem**. The app writes `cs_bot.db` in the working directory; that directory is discarded on the next deploy, so you get a fresh (empty) DB every time.
+
+**Fix: use a persistent volume** (see next section).
+
+### Persist the database (recommended)
+
+1. In your Railway project, open the service that runs the bot + API.
+2. Go to **Settings** (or **Variables**).
+3. Click **Add Volume** (or **Volumes** → **Add Volume**). Create a volume and set the **mount path** to `/data` (or e.g. `/data/db`).
+4. Railway injects `RAILWAY_VOLUME_MOUNT_PATH` when a volume is attached. The app will then use that path for the DB automatically (e.g. `/data/cs_bot.db`).
+5. Optional: set **`CS_BOT_DB`** explicitly to match the volume path, e.g. **`/data/cs_bot.db`**, so the DB file lives on the volume and survives redeploys.
+
+After the next deploy, the DB will persist across future deployments.
 - Paste each value in the Railway UI; Railway will keep them secret.
 
 ## 5. Deploy
