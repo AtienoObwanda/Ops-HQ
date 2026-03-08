@@ -13,6 +13,7 @@ import secrets
 from collections import Counter
 from datetime import datetime, timedelta
 from functools import wraps
+import math
 
 from io import BytesIO
 from flask import Flask, request, jsonify, send_from_directory, send_file
@@ -122,7 +123,14 @@ def me():
 def get_projects():
     include_done = request.args.get("include_done") == "true"
     projects = db.all_projects(exclude_done=not include_done)
-    return jsonify([dict(p) for p in projects])
+    projects_dicts = [dict(p) for p in projects]
+    open_issues_list = db.open_issues(limit=200)
+    risk_scores = _compute_risk_scores(projects_dicts, [dict(i) for i in open_issues_list])
+    for p in projects_dicts:
+        r = risk_scores.get(p["id"], {})
+        p["risk_score"] = r.get("risk_score", 0)
+        p["risk_level"] = r.get("risk_level", "low")
+    return jsonify(projects_dicts)
 
 
 @app.route("/api/projects", methods=["POST"])
@@ -364,6 +372,108 @@ def client_report(cid):
     })
 
 
+# ── GO-LIVE RISK SCORING (proactive) ──────────────────────────────────────────
+
+def _compute_risk_scores(projects, open_issues_list):
+    """
+    Compute 0-100 risk score per project from: days since update, go-live pressure,
+    open issues for client, blocked Jira for client, times flagged At Risk before.
+    Returns dict project_id -> { "risk_score": int, "risk_level": "low"|"medium"|"high" }.
+    """
+    if not projects:
+        return {}
+
+    def open_count(p):
+        """Open issues for this project (project_id or client_id match, no double-count)."""
+        return sum(
+            1 for i in open_issues_list
+            if i.get("project_id") == p["id"]
+            or (i.get("client_id") == p.get("client_id") and i.get("project_id") != p["id"])
+        )
+
+    # Blocked Jira per client_id
+    blocked_per_client = Counter()
+    if jira.is_configured():
+        try:
+            blocked = jira.get_blocked_tickets()
+            links = db.get_jira_ticket_client_links()
+            for t in blocked:
+                key = t.get("key")
+                if key and key in links:
+                    blocked_per_client[links[key]] += 1
+        except Exception:
+            pass
+
+    at_risk_counts = db.get_project_at_risk_counts()
+
+    now = datetime.utcnow()
+    result = {}
+    for p in projects:
+        if p.get("stage") == "Done":
+            result[p["id"]] = {"risk_score": 0, "risk_level": "low"}
+            continue
+        score = 0.0
+        # 1. Staleness (0-25): days since last update
+        updated_at = p.get("updated_at") or ""
+        if updated_at:
+            try:
+                dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=None)
+                    days_since = (now - dt).total_seconds() / 86400
+                else:
+                    days_since = (now - dt.replace(tzinfo=None)).total_seconds() / 86400
+                if days_since > 2:
+                    score += min(25, (days_since - 2) * 6)
+            except Exception:
+                pass
+        # 2. Go-live pressure (0-25)
+        go_live = (p.get("go_live") or "").strip()
+        if go_live:
+            try:
+                from datetime import date
+                gl = date.fromisoformat(go_live[:10])
+                td = (gl - now.date()).days
+                if td < 0:
+                    score += 25
+                elif td < 7:
+                    score += 20
+                elif td < 14:
+                    score += 15
+                elif td < 30:
+                    score += 10
+            except Exception:
+                pass
+        # 3. Open issues for this client/project (0-25)
+        oc = open_count(p)
+        if oc >= 6:
+            score += 25
+        elif oc >= 3:
+            score += 15
+        elif oc >= 1:
+            score += 8
+        # 4. Blocked Jira for client (0-25)
+        bc = blocked_per_client.get(p.get("client_id"), 0)
+        if bc >= 1:
+            score += 25
+        # 5. Times flagged At Risk before (0-25)
+        ac = at_risk_counts.get(p["id"], 0)
+        if ac >= 2:
+            score += 25
+        elif ac >= 1:
+            score += 10
+
+        risk_score = min(100, int(math.ceil(score)))
+        if risk_score < 25:
+            risk_level = "low"
+        elif risk_score < 50:
+            risk_level = "medium"
+        else:
+            risk_level = "high"
+        result[p["id"]] = {"risk_score": risk_score, "risk_level": risk_level}
+    return result
+
+
 # ── BRIEF ─────────────────────────────────────────────────────────────────────
 
 def _brief_by_client(all_projects, at_risk, stale, open_issues_list, jira_tickets_per_client=None):
@@ -434,10 +544,20 @@ def get_brief():
         for t in jira_data.get("blocked", [])[:5]:
             pending.append({"type": "jira_blocked", "ticket": t, "label": f"Jira blocked: {t.get('key')} — {t.get('summary', '')[:50]}"})
 
+    # Go-live risk scores (proactive heatmap)
+    projects_dicts = [dict(p) for p in all_projects]
+    risk_scores = _compute_risk_scores(projects_dicts, [dict(i) for i in open_issues_list])
+    for p in projects_dicts:
+        r = risk_scores.get(p["id"], {})
+        p["risk_score"] = r.get("risk_score", 0)
+        p["risk_level"] = r.get("risk_level", "low")
+    risk_heat = sorted(projects_dicts, key=lambda x: (-x.get("risk_score", 0), x.get("client", "")))[:15]
+
     return jsonify({
         "stale":       stale_list,
         "at_risk":     at_risk_list,
-        "all_projects": [dict(p) for p in all_projects],
+        "all_projects": projects_dicts,
+        "risk_heat":   risk_heat,
         "all_projects_with_done": [dict(p) for p in all_projects_with_done],
         "by_stage":    [dict(r) for r in by_stage],
         "by_client":   by_client,

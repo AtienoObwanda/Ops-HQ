@@ -843,6 +843,14 @@
   .dot-green  { background: var(--success); }
   .dot-warn   { background: var(--warn); }
   .dot-danger { background: var(--danger); }
+  .risk-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .risk-dot.risk-low    { background: var(--muted); }
+  .risk-dot.risk-medium { background: var(--warn); }
+  .risk-dot.risk-high   { background: var(--danger); }
 
   .escalation-picker-wrap { max-height: 340px; overflow-y: auto; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
   .escalation-picker-wrap .grooming-table { margin: 0; }
@@ -949,6 +957,11 @@
       <div class="card" id="brief-pending-card">
         <div class="card-title">🎯 Pending / Do first</div>
         <div id="brief-pending"></div>
+      </div>
+      <div class="card" id="brief-risk-heat-card">
+        <div class="card-title">🔥 Go-live risk heat</div>
+        <div class="page-sub" style="margin-bottom:10px">Proactive score from: days since update, go-live pressure, open issues, blocked Jira, past flags. Focus on high first.</div>
+        <div id="brief-risk-heat"></div>
       </div>
       <div class="grid-2">
         <div>
@@ -1773,6 +1786,23 @@ async function loadBrief() {
     </div>
   `;
 
+  // Go-live risk heat (proactive)
+  const riskHeat = data.risk_heat || [];
+  const riskHeatEl = document.getElementById("brief-risk-heat");
+  riskHeatEl.innerHTML = riskHeat.length
+    ? riskHeat.filter(p => (p.risk_score || 0) > 0).map(p => {
+        const level = p.risk_level || "low";
+        const score = p.risk_score || 0;
+        const tag = level === "high" ? "tag-danger" : level === "medium" ? "tag-warn" : "tag-gray";
+        return `<div class="project-row draggable-card" style="padding:8px 0;border-bottom:1px solid var(--border)" draggable="true" onclick="nav('pipeline');openProjectDetail(${p.id})">
+          ${DRAG_HANDLE_HTML}
+          <span class="tag ${tag}" style="font-size:10px;min-width:28px">${score}</span>
+          <span class="project-client">${escapeHtml(p.client)}</span>
+          <span style="font-size:12px;color:var(--muted)">${escapeHtml(p.stage || "")} · ${level}</span>
+        </div>`;
+      }).join("") || `<div class="empty-state">No risk scores (all low).</div>`
+    : `<div class="empty-state">No projects.</div>`;
+
   // Pending / do first
   const pending = data.pending_do_first || [];
   document.getElementById("brief-pending").innerHTML = pending.length
@@ -2052,7 +2082,10 @@ async function loadPipeline() {
         <div class="pipeline-item draggable-card" draggable="true" data-project-id="${p.id}" data-stage="${escapeHtml(p.stage)}" ondragstart="pipelineDragStart(event, ${p.id})" ondragend="pipelineDragEnd(event)" onclick="if(!window._pipelineDragging) openProjectDetail(${p.id})">
           <span class="drag-handle" title="Drag to move" onclick="event.stopPropagation()"><svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.2"/><circle cx="8" cy="4" r="1.2"/><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg></span>
           <div class="pipeline-item-body">
-            <div>${escapeHtml(p.client)}</div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              ${(p.risk_score || 0) > 0 ? `<span class="risk-dot risk-${p.risk_level || 'low'}" title="Risk score: ${p.risk_score || 0} (${(p.risk_level || 'low')})"></span>` : ""}
+              <span>${escapeHtml(p.client)}</span>
+            </div>
             <div class="pipeline-item-owner">${escapeHtml(p.owner_name || "—")}${p.recon_name ? " · Recon: " + escapeHtml(p.recon_name) : ""}</div>
             ${p.health !== "On Track" ? `<div style="margin-top:4px"><span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span></div>` : ""}
           </div>

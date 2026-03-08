@@ -153,6 +153,12 @@ def init_db():
                 created_at  TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS project_health_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id  INTEGER NOT NULL REFERENCES projects(id),
+                health      TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
     print(f"✅ DB initialised at {DB_PATH}")
 
@@ -399,11 +405,33 @@ def update_project(project_id, **kwargs):
     }
     if not updates:
         return
+    new_health = updates.get("health")
     updates["updated_at"] = datetime.utcnow().isoformat()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [project_id]
     with get_conn() as conn:
         conn.execute(f"UPDATE projects SET {set_clause} WHERE id = ?", values)
+    if new_health in ("At Risk", "Blocked"):
+        record_project_health_change(project_id, new_health)
+
+
+def record_project_health_change(project_id, health):
+    """Record that a project was flagged At Risk or Blocked (for risk scoring history)."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO project_health_history (project_id, health) VALUES (?, ?)",
+            (project_id, health),
+        )
+
+
+def get_project_at_risk_counts():
+    """Return dict project_id -> count of times flagged At Risk or Blocked (for risk scoring)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT project_id, COUNT(*) as cnt FROM project_health_history
+               WHERE health IN ('At Risk', 'Blocked') GROUP BY project_id"""
+        ).fetchall()
+    return {r["project_id"]: r["cnt"] for r in rows}
 
 
 def delete_project(project_id):
