@@ -206,22 +206,37 @@ Write the monthly report now."""
 
 # ── MEETING PREP ──────────────────────────────────────────────────────────────
 
-def generate_meeting_prep(meeting_type, projects, issues):
+def generate_meeting_prep(meeting_type, projects, issues, tickets_text=None, look_back=None):
     """
     Generates talking points for cross-functional meetings.
     meeting_type: 'sales_sync' | 'product_eng' | 'client_call'
+    tickets_text: optional Jira ticket details + comments (use as primary knowledge base).
+    look_back: optional True or string (e.g. 'last quarter', 'Q4 2025'). When set, AI may reference past quarters when relevant.
     """
-    system = """You are a senior delivery manager preparing for a cross-functional meeting 
+    from datetime import date
+    today = date.today()
+    year, month = today.year, today.month
+    q = (month - 1) // 3 + 1
+    quarter_label = f"Q{q} {year}"
+
+    if look_back:
+        date_rule = """The user message includes today's date and current quarter. You may reference past quarters or compare to previous periods when useful (the user requested a look back). Still lead with current and forward-looking points."""
+    else:
+        date_rule = """The user message includes today's date and current quarter. Use ONLY that current quarter and future quarters when referring to timelines or capacity. Never reference past quarters or past years—derive everything from the date given."""
+
+    system = f"""You are a senior delivery manager preparing for a cross-functional meeting 
 at a fintech company. Generate concise, structured talking points. Be specific, not generic.
-Lead with what needs a decision or action from the other team. Max 200 words."""
+Lead with what needs a decision or action from the other team.
+CRITICAL: {date_rule}
+Max 200 words."""
 
     project_text = "\n".join([
-        f"- {p['client']} | {p['stage']} | {p['health']} | {p['notes'] or 'no notes'}"
+        f"- {p.get('client', '')} | {p.get('stage', '')} | {p.get('health', '')} | {p.get('notes') or 'no notes'}"
         for p in projects
     ]) or "No active projects."
 
     issue_text = "\n".join([
-        f"- [{i['category']}] {i['title']}"
+        f"- [{i.get('category', '')}] {i.get('title', '')}"
         for i in issues
     ]) or "No open issues."
 
@@ -231,17 +246,32 @@ Lead with what needs a decision or action from the other team. Max 200 words."""
         "client_call":  "Client status call. You need to project confidence, give clear next steps, and handle any concerns without over-committing.",
     }.get(meeting_type, "Cross-functional meeting.")
 
-    user = f"""Meeting type: {meeting_context}
-
-Current project portfolio:
-{project_text}
-
-Open issues:
-{issue_text}
-
-Generate my talking points for this meeting."""
-
-    return _call(system, user, max_tokens=400)
+    parts = [
+        f"Today's date: {today.isoformat()}. We are in {quarter_label}.",
+        f"Meeting type: {meeting_context}",
+    ]
+    if look_back:
+        if isinstance(look_back, str) and look_back.strip():
+            parts.append(f"Look back requested: {look_back.strip()}")
+        else:
+            parts.append("Look back: user asked to include past quarters / historical context when relevant.")
+    else:
+        parts.append(f"When referring to capacity or timelines, use only {quarter_label} and future quarters.")
+    parts.extend([
+        "Current project portfolio:",
+        project_text,
+        "Open issues (from issue log):",
+        issue_text,
+    ])
+    if tickets_text and tickets_text.strip():
+        parts.extend([
+            "",
+            "JIRA TICKETS (descriptions + comments — use as primary knowledge base for delivery reality, blockers, and context):",
+            tickets_text.strip(),
+        ])
+    parts.extend(["", "Generate my talking points for this meeting."])
+    user = "\n".join(parts)
+    return _call(system, user, max_tokens=500)
 
 
 # ── PRODUCT SCOPE (escalation to product: draft scope from tickets, future, drive) ─

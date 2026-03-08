@@ -779,10 +779,27 @@ def ai_client_update_by_client(cid):
 def ai_meeting_prep():
     data         = request.json or {}
     meeting_type = data.get("type", "sales_sync")
+    look_back    = data.get("look_back")  # True or string e.g. "last quarter", "Q4 2025"
     try:
         projects = db.all_projects()
         issues   = db.open_issues()
-        prep     = ai.generate_meeting_prep(meeting_type, [dict(p) for p in projects], [dict(i) for i in issues])
+        tickets_text = ""
+        if jira.is_configured():
+            try:
+                grooming = jira.get_grooming_tickets(max_results=30)
+                keys = [t.get("key") for t in grooming if t.get("key")][:15]
+                if keys:
+                    tickets = jira.get_tickets_by_keys(keys, include_comments=True)
+                    tickets_text = jira.format_tickets_for_ai(tickets) if tickets else ""
+            except Exception:
+                pass
+        prep = ai.generate_meeting_prep(
+            meeting_type,
+            [dict(p) for p in projects],
+            [dict(i) for i in issues],
+            tickets_text=tickets_text or None,
+            look_back=look_back,
+        )
         return jsonify({"prep": prep})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -856,6 +873,18 @@ def _cockpit_context():
             lines.append("JIRA (recent open tickets):")
             for t in grooming[:20]:
                 lines.append(f"  - {t.get('key', '')} | {t.get('status', '')} | {t.get('assignee', '—')} | {t.get('summary', '')[:60]}")
+            # Ticket details + comments as knowledge base for AI (descriptions and comments are critical)
+            keys = [t.get("key") for t in grooming if t.get("key")][:10]
+            if keys:
+                try:
+                    tickets = jira.get_tickets_by_keys(keys, include_comments=True)
+                    if tickets:
+                        lines.append("")
+                        lines.append("JIRA TICKET DETAILS (descriptions + comments — use as knowledge base):")
+                        lines.append(jira.format_tickets_for_ai(tickets))
+                except Exception:
+                    lines.append("")
+                    lines.append("JIRA ticket details: (fetch failed)")
         except Exception:
             lines.append("")
             lines.append("JIRA: (error fetching)")
@@ -893,27 +922,29 @@ def ai_document_templates():
 @_require_auth(roles=["admin", "engineer"])
 def ai_document():
     """
-    Generate a document from an industry-standard template. Purely AI.
+    Generate a document from an industry-standard template. Uses Jira ticket details + comments as knowledge base when jira_keys provided.
     Body: template_id, jira_keys (optional list), context (optional string).
-    If no tickets and no context, AI still produces a template-shaped draft.
     """
-    data = request.json or {}
-    template_id = (data.get("template_id") or "").strip()
-    if not template_id or template_id not in ai.DOCUMENT_TEMPLATES:
-        return jsonify({"error": "template_id required and must be a valid template"}), 400
-    keys_raw = data.get("jira_keys") or []
-    jira_keys = keys_raw if isinstance(keys_raw, list) else [k.strip() for k in str(keys_raw).replace(",", " ").split() if k.strip()]
-    context = (data.get("context") or "").strip()
-    client_name = None
-    if data.get("client_id") is not None:
-        c = db.get_client(data["client_id"])
-        if c:
-            client_name = c.get("name") or ""
-    tickets_text = ""
-    if jira_keys:
-        tickets = jira.get_tickets_by_keys(jira_keys)
-        tickets_text = jira.format_tickets_for_ai(tickets) if tickets else ""
     try:
+        data = request.json or {}
+        template_id = (data.get("template_id") or "").strip()
+        if not template_id or template_id not in ai.DOCUMENT_TEMPLATES:
+            return jsonify({"error": "template_id required and must be a valid template"}), 400
+        keys_raw = data.get("jira_keys") or []
+        jira_keys = keys_raw if isinstance(keys_raw, list) else [k.strip() for k in str(keys_raw).replace(",", " ").split() if k.strip()]
+        context = (data.get("context") or "").strip()
+        client_name = None
+        if data.get("client_id") is not None:
+            c = db.get_client(data["client_id"])
+            if c:
+                client_name = c.get("name") or ""
+        tickets_text = ""
+        if jira_keys:
+            try:
+                tickets = jira.get_tickets_by_keys(jira_keys, include_comments=True)
+                tickets_text = jira.format_tickets_for_ai(tickets) if tickets else ""
+            except Exception as je:
+                context = (context + "\n\n[Jira fetch failed for ticket details/comments: " + str(je) + "]").strip()
         draft = ai.generate_document_from_template(template_id, tickets_text or None, context or None, client_name=client_name)
         return jsonify({"draft": draft, "template_id": template_id, "client_name": client_name})
     except Exception as e:

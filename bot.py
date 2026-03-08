@@ -287,8 +287,23 @@ def handle_meetingprep(ack, respond, command, body):
     try:
         projects = db.all_projects()
         issues   = db.open_issues()
-        prep     = ai.generate_meeting_prep(meeting_type, [dict(p) for p in projects], [dict(i) for i in issues])
-        label    = {"sales_sync": "Sales Sync", "product_eng": "Product & Eng", "client_call": "Client Call"}[meeting_type]
+        tickets_text = ""
+        if jira.is_configured():
+            try:
+                grooming = jira.get_grooming_tickets(max_results=30)
+                keys = [t.get("key") for t in grooming if t.get("key")][:15]
+                if keys:
+                    tickets = jira.get_tickets_by_keys(keys, include_comments=True)
+                    tickets_text = jira.format_tickets_for_ai(tickets) if tickets else ""
+            except Exception:
+                pass
+        prep = ai.generate_meeting_prep(
+            meeting_type,
+            [dict(p) for p in projects],
+            [dict(i) for i in issues],
+            tickets_text=tickets_text or None,
+        )
+        label = {"sales_sync": "Sales Sync", "product_eng": "Product & Eng", "client_call": "Client Call"}[meeting_type]
         app.client.chat_postMessage(
             channel=body["channel_id"],
             text="Meeting Prep",

@@ -1266,6 +1266,11 @@
             <option value="product_eng">Product & Eng Escalation</option>
             <option value="client_call">Client Call</option>
           </select>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="mp-look-back" onchange="document.getElementById('mp-look-back-text').style.display=this.checked?'block':'none'" />
+            <span>Include look back (past quarters ok when relevant)</span>
+          </label>
+          <input type="text" class="form-input" id="mp-look-back-text" placeholder="e.g. last quarter, Q4 2025 (optional)" style="margin-top:6px;font-size:12px;display:none" />
           <button class="btn-accent" style="margin-top:10px;width:100%;" onclick="generateMeetingPrep()">Generate Talking Points</button>
           <div class="ai-output" id="mp-output" style="display:none;"></div>
         </div>
@@ -3207,10 +3212,13 @@ async function generateClientUpdate() {
 
 async function generateMeetingPrep() {
   const type = document.getElementById("mp-type-select").value;
-  const out  = document.getElementById("mp-output");
+  const lookBackCb = document.getElementById("mp-look-back");
+  const lookBackText = document.getElementById("mp-look-back-text");
+  const look_back = lookBackCb?.checked ? (lookBackText?.value?.trim() || true) : undefined;
+  const out = document.getElementById("mp-output");
   out.style.display = "block";
   out.innerHTML = `<span class="ai-loading">✦ Generating talking points...</span>`;
-  const data = await api("POST", "/api/ai/meetingprep", { type });
+  const data = await api("POST", "/api/ai/meetingprep", { type, look_back });
   out.innerHTML = data?.prep || data?.error || "Error.";
 }
 
