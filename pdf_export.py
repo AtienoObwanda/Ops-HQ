@@ -53,3 +53,47 @@ def uat_signoff_pdf(project, signoff_content):
 def generic_pdf(title, body):
     """Return PDF bytes for any document (e.g. AI-generated)."""
     return _pdf_from_text(title or "Document", body)
+
+
+def oncall_monthly_report_pdf(period_label, summary, tickets):
+    """Return PDF bytes for oncall monthly report. summary: {total_open, by_status, by_assignee, unassigned_count, oldest_ticket}. tickets: list of {key, summary, status, assignee, updated}."""
+    lines = [
+        f"Oncall Monthly Report — {period_label}",
+        "",
+        "Summary (current open)",
+        f"  Total open: {summary.get('total_open', 0)}",
+        f"  Unassigned: {summary.get('unassigned_count', 0)}",
+        "",
+    ]
+    by_status = summary.get("by_status") or {}
+    if by_status:
+        lines.append("By status:")
+        for s, c in sorted(by_status.items(), key=lambda x: -x[1]):
+            lines.append(f"  {s}: {c}")
+        lines.append("")
+    by_assignee = summary.get("by_assignee") or {}
+    if by_assignee:
+        lines.append("By assignee:")
+        for a, c in sorted(by_assignee.items(), key=lambda x: -x[1]):
+            lines.append(f"  {a}: {c}")
+        lines.append("")
+    oldest = summary.get("oldest_ticket")
+    if oldest:
+        lines.append(f"Oldest open: {oldest.get('key', '')} — {oldest.get('summary', '')[:50]}…")
+        lines.append(f"  Updated: {oldest.get('updated', '')[:10]}")
+        lines.append("")
+    lines.append("Tickets updated in period")
+    lines.append("-" * 40)
+    for t in tickets[:80]:
+        key = t.get("key", "")
+        summary_short = (t.get("summary") or "")[:45]
+        if len(t.get("summary") or "") > 45:
+            summary_short += "…"
+        status = t.get("status", "")
+        assignee = t.get("assignee", "—")
+        updated = (t.get("updated") or "")[:10]
+        lines.append(f"{key}  {status}  {assignee}  {updated}")
+        lines.append(f"  {summary_short}")
+        lines.append("")
+    body = "\n".join(lines)
+    return _pdf_from_text(f"Oncall Report — {period_label}", body)

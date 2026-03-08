@@ -311,6 +311,117 @@ def format_tickets_for_ai(tickets):
     return "\n\n---\n\n".join(blocks)
 
 
+# ── ONCALL vs PROJECT (CS- = oncall, rest = projects) ─────────────────────────
+
+def is_oncall_ticket(key):
+    """Tickets whose key starts with CS- are oncall; the rest are project tickets."""
+    return (key or "").upper().startswith("CS-")
+
+
+# Jira status -> pipeline stage for project tickets (non-CS) in pipeline view.
+# Unknown statuses default to Discovery.
+JIRA_STATUS_TO_STAGE = {
+    "Ticket Grooming": "Discovery",
+    "To Do": "Discovery",
+    "Open": "Discovery",
+    "Requirement gathering": "Discovery",
+    "BLOCKED": "Discovery",
+    "Config": "Config",
+    "Integration": "Integration",
+    "Internal User Testing": "UAT",
+    "IN REVIEW": "UAT",
+    "UAT": "UAT",
+    "Go-Live": "Go-Live",
+    "Hypercare": "Hypercare",
+}
+
+PIPELINE_STAGES = ["Discovery", "Config", "Integration", "UAT", "Go-Live", "Hypercare"]
+
+
+def get_project_tickets_for_pipeline(max_results=100):
+    """
+    Open Jira tickets that are *not* oncall (i.e. not CS-*). Each ticket gets a
+    `stage` field mapped from Jira status for pipeline board display.
+    """
+    if not is_configured():
+        return []
+    raw = get_grooming_tickets(max_results=max_results)
+    out = []
+    for t in raw:
+        key = t.get("key") or ""
+        if is_oncall_ticket(key):
+            continue
+        status = (t.get("status") or "").strip()
+        stage = JIRA_STATUS_TO_STAGE.get(status) or JIRA_STATUS_TO_STAGE.get(
+            status.upper()
+        ) or "Discovery"
+        if stage not in PIPELINE_STAGES:
+            stage = "Discovery"
+        out.append({**t, "stage": stage})
+    return out
+
+
+def get_oncall_tickets(max_results=80):
+    """Open Jira tickets that are oncall (CS-*). For oncall one-pager."""
+    if not is_configured():
+        return []
+    raw = get_grooming_tickets(max_results=max_results)
+    return [t for t in raw if is_oncall_ticket(t.get("key") or "")]
+
+
+# Project key for oncall in Jira (CS-*). Used for monthly report JQL.
+ONCALL_PROJECT_KEY = os.environ.get("JIRA_ONCALL_PROJECT_KEY", "CS").strip() or "CS"
+
+
+def get_oncall_tickets_updated_since(days=30, max_results=150):
+    """Oncall (CS) tickets updated in the last N days (open or closed). For monthly report."""
+    if not is_configured():
+        return []
+    jql = (
+        f'project = "{ONCALL_PROJECT_KEY}" '
+        f"AND updated >= -{int(days)}d "
+        f"ORDER BY updated DESC"
+    )
+    try:
+        issues = _jira_search_jql(
+            jql,
+            fields=["summary", "status", "assignee", "updated", "priority", "created"],
+            max_results=max_results,
+        )
+        return [_parse_ticket(t) for t in issues]
+    except Exception as e:
+        print(f"⚠️  Jira oncall monthly report error: {e}")
+        return []
+
+
+def get_oncall_summary():
+    """Summary stats for oncall one-pager: counts by status, by assignee, unassigned, oldest ticket."""
+    tickets = get_oncall_tickets(max_results=200)
+    by_status = {}
+    by_assignee = {}
+    unassigned = 0
+    oldest = None
+    for t in tickets:
+        s = (t.get("status") or "—").strip() or "—"
+        by_status[s] = by_status.get(s, 0) + 1
+        a = (t.get("assignee") or "").strip()
+        if a and a.lower() not in ("unassigned", "—", ""):
+            by_assignee[a] = by_assignee.get(a, 0) + 1
+        else:
+            unassigned += 1
+        updated = t.get("updated") or ""
+        if updated:
+            if oldest is None or (updated < oldest.get("updated", "")):
+                oldest = {"key": t.get("key"), "summary": (t.get("summary") or "")[:60], "updated": updated}
+    return {
+        "total_open": len(tickets),
+        "by_status": by_status,
+        "by_assignee": by_assignee,
+        "unassigned_count": unassigned,
+        "oldest_ticket": oldest,
+    }
+
+
 # ── SUMMARY FOR BRIEF ─────────────────────────────────────────────────────────
 
 def get_grooming_tickets(max_results=80):

@@ -10,6 +10,7 @@ import os
 import json
 import hashlib
 import secrets
+from collections import Counter
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -349,8 +350,8 @@ def client_report(cid):
 
 # ── BRIEF ─────────────────────────────────────────────────────────────────────
 
-def _brief_by_client(all_projects, at_risk, stale, open_issues_list):
-    """Build per-client summary for the brief (client lens)."""
+def _brief_by_client(all_projects, at_risk, stale, open_issues_list, jira_tickets_per_client=None):
+    """Build per-client summary for the brief (client lens). Includes issue log + Jira tickets linked via grooming."""
     clients = db.all_clients()
     at_risk_ids = {p["id"] for p in at_risk}
     stale_ids = {p["id"] for p in stale}
@@ -358,11 +359,13 @@ def _brief_by_client(all_projects, at_risk, stale, open_issues_list):
     for i in open_issues_list:
         cname = (i.get("client") or "").strip() or "—"
         issues_by_client_name[cname] = issues_by_client_name.get(cname, 0) + 1
+    jira_per_cid = jira_tickets_per_client or {}
     by_client = []
     for c in clients:
         cid, cname = c["id"], c["name"]
         projects_c = [p for p in all_projects if p.get("client_id") == cid or (p.get("client") or "").strip() == cname]
         active_c = [p for p in projects_c if p.get("stage") != "Done"]
+        jira_linked = jira_per_cid.get(cid, 0)
         by_client.append({
             "client_id": cid,
             "client_name": cname,
@@ -370,6 +373,7 @@ def _brief_by_client(all_projects, at_risk, stale, open_issues_list):
             "at_risk_count": sum(1 for p in active_c if p["id"] in at_risk_ids),
             "stale_count": sum(1 for p in active_c if p["id"] in stale_ids),
             "open_issues": issues_by_client_name.get(cname, 0),
+            "jira_tickets": jira_linked,
         })
     return by_client
 
@@ -389,11 +393,15 @@ def get_brief():
     open_issues_list = db.open_issues(limit=50)
     at_risk_list = [dict(p) for p in at_risk]
     stale_list = [dict(p) for p in stale]
+    # Jira tickets linked to clients (from grooming dropdown) so "By client" reflects assigned items
+    links = db.get_jira_ticket_client_links()
+    jira_per_client = Counter(links.values())  # client_id -> count of linked tickets
     by_client = _brief_by_client(
         [dict(p) for p in all_projects_with_done],
         at_risk_list,
         stale_list,
         [dict(i) for i in open_issues_list],
+        jira_tickets_per_client=dict(jira_per_client),
     )
     # Pending / do first: at risk + stale + overdue go-live + blocked Jira (combined priority list)
     overdue_ids = {p["id"] for p in go_live_overdue}
@@ -469,13 +477,90 @@ def create_reflection():
 @app.route("/api/jira/grooming", methods=["GET"])
 @_require_auth()
 def jira_grooming():
-    """All open Jira tickets for ticket-grooming view. Optional ?client=Name filters to tickets whose summary contains the client name."""
+    """All open Jira tickets for ticket-grooming view. Optional ?client=Name filters to tickets whose summary contains the client name.
+    Each ticket has oncall: true when key starts with CS- (oncall), else project."""
     tickets = jira.get_grooming_tickets()
     client_filter = (request.args.get("client") or "").strip()
     if client_filter:
         client_lower = client_filter.lower()
         tickets = [t for t in tickets if client_lower in (t.get("summary") or "").lower()]
+    # Tag oncall (CS-*) vs project for grooming filter and badges
+    for t in tickets:
+        t["oncall"] = jira.is_oncall_ticket(t.get("key") or "")
     return jsonify({"configured": jira.is_configured(), "tickets": tickets})
+
+
+@app.route("/api/jira/pipeline-tickets", methods=["GET"])
+@_require_auth()
+def jira_pipeline_tickets():
+    """Jira project tickets (non-CS) with stage mapped from status, for populating pipeline board alongside DB projects."""
+    tickets = jira.get_project_tickets_for_pipeline()
+    return jsonify({"configured": jira.is_configured(), "tickets": tickets})
+
+
+@app.route("/api/jira/oncall", methods=["GET"])
+@_require_auth()
+def jira_oncall():
+    """Oncall tickets only (CS-*). For oncall one-pager."""
+    tickets = jira.get_oncall_tickets()
+    return jsonify({"configured": jira.is_configured(), "tickets": tickets})
+
+
+@app.route("/api/jira/oncall/summary", methods=["GET"])
+@_require_auth()
+def jira_oncall_summary():
+    """Summary/analysis for oncall one-pager: total open, by status, by assignee, unassigned, oldest."""
+    if not jira.is_configured():
+        return jsonify({"configured": False, "summary": None})
+    summary = jira.get_oncall_summary()
+    return jsonify({"configured": True, "summary": summary})
+
+
+@app.route("/api/jira/oncall/monthly-report", methods=["GET"])
+@_require_auth()
+def jira_oncall_monthly_report():
+    """Oncall tickets updated in the last N days (for monthly report). Query: days=30."""
+    days = request.args.get("days", "30")
+    try:
+        days = int(days)
+    except ValueError:
+        days = 30
+    days = max(1, min(365, days))
+    if not jira.is_configured():
+        return jsonify({"configured": False, "tickets": [], "period_label": f"Last {days} days"})
+    tickets = jira.get_oncall_tickets_updated_since(days=days)
+    summary = jira.get_oncall_summary()
+    return jsonify({
+        "configured": True,
+        "tickets": tickets,
+        "summary": summary,
+        "period_label": f"Last {days} days",
+    })
+
+
+@app.route("/api/jira/oncall/monthly-report.pdf", methods=["GET"])
+@_require_auth()
+def jira_oncall_monthly_report_pdf():
+    """Download oncall monthly report as PDF. Query: days=30."""
+    days = request.args.get("days", "30")
+    try:
+        days = int(days)
+    except ValueError:
+        days = 30
+    days = max(1, min(365, days))
+    if not jira.is_configured():
+        return jsonify({"error": "Jira not configured"}), 400
+    tickets = jira.get_oncall_tickets_updated_since(days=days)
+    summary = jira.get_oncall_summary()
+    period_label = f"Last {days} days"
+    pdf_bytes = pdf_export.oncall_monthly_report_pdf(period_label, summary, tickets)
+    buf = BytesIO(pdf_bytes)
+    return send_file(
+        buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"oncall-report-{days}days.pdf",
+    )
 
 
 @app.route("/api/jira/client-links", methods=["GET"])
@@ -596,42 +681,6 @@ def create_issue():
 @_require_auth(roles=["admin"])
 def resolve_issue(iid):
     db.resolve_issue(iid)
-    return jsonify({"ok": True})
-
-
-# ── GOALS ─────────────────────────────────────────────────────────────────────
-
-@app.route("/api/goals", methods=["GET"])
-@_require_auth()
-def get_goals():
-    with db.get_conn() as conn:
-        goals = conn.execute("SELECT * FROM goals ORDER BY created_at DESC").fetchall()
-    return jsonify([dict(g) for g in goals])
-
-
-@app.route("/api/goals", methods=["POST"])
-@_require_auth(roles=["admin"])
-def create_goal():
-    data = request.json or {}
-    with db.get_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO goals (title, owner_name, target_date, progress, status)
-               VALUES (?, ?, ?, ?, 'active')""",
-            (data["title"], data.get("owner_name"), data.get("target_date"), data.get("progress", 0))
-        )
-    return jsonify({"id": cur.lastrowid}), 201
-
-
-@app.route("/api/goals/<int:gid>", methods=["PATCH"])
-@_require_auth(roles=["admin", "engineer"])
-def update_goal(gid):
-    data = request.json or {}
-    allowed = {"progress", "status", "notes"}
-    updates = {k: v for k, v in data.items() if k in allowed}
-    if updates:
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
-        with db.get_conn() as conn:
-            conn.execute(f"UPDATE goals SET {set_clause} WHERE id = ?", list(updates.values()) + [gid])
     return jsonify({"ok": True})
 
 
@@ -1049,21 +1098,57 @@ def delete_eisenhower_task(tid):
     return jsonify({"ok": True})
 
 
-# ── TEAM / WORKLOAD ───────────────────────────────────────────────────────────
+# ── TEAM / WORKLOAD (DB projects + Jira grooming by assignee) ─────────────────
 
 @app.route("/api/team/workload", methods=["GET"])
 @_require_auth()
 def team_workload():
+    """Workload per engineer: DB projects (by owner) + Jira grooming tickets (by assignee). Populated from pipeline/grooming; engineers mapped via JIRA_TO_SLACK."""
     projects = db.all_projects()
+    tickets = jira.get_grooming_tickets(max_results=150)
+    engineers = {e["jira_name"]: e for e in jira.get_engineer_mapping()}
+
     workload = {}
+    def ensure_member(name, slack_id=None):
+        if not name:
+            name = "Unassigned"
+        if name not in workload:
+            workload[name] = {
+                "name": name,
+                "slack": slack_id,
+                "projects": [],
+                "tickets": [],
+                "at_risk": 0,
+            }
+        return workload[name]
+
     for p in projects:
-        owner = p["owner_name"] or "Unassigned"
-        if owner not in workload:
-            workload[owner] = {"name": owner, "slack": p["owner_slack"], "projects": [], "at_risk": 0}
-        workload[owner]["projects"].append(dict(p))
-        if p["health"] in ("At Risk", "Blocked"):
-            workload[owner]["at_risk"] += 1
-    return jsonify(list(workload.values()))
+        owner = (p.get("owner_name") or "").strip() or "Unassigned"
+        m = ensure_member(owner, p.get("owner_slack"))
+        m["projects"].append(dict(p))
+        if p.get("health") in ("At Risk", "Blocked"):
+            m["at_risk"] += 1
+
+    for t in tickets:
+        assignee = (t.get("assignee") or "").strip()
+        if assignee and assignee.lower() in ("unassigned", "—", ""):
+            assignee = "Unassigned"
+        if not assignee:
+            assignee = "Unassigned"
+        m = ensure_member(assignee, engineers.get(assignee, {}).get("slack_id"))
+        m["tickets"].append({
+            "key": t.get("key"),
+            "summary": t.get("summary"),
+            "status": t.get("status"),
+            "url": t.get("url"),
+            "oncall": jira.is_oncall_ticket(t.get("key") or ""),
+        })
+
+    # Sort: by total work (projects + tickets) desc, then Unassigned last
+    def order(m):
+        total = len(m["projects"]) + len(m["tickets"])
+        return (-total, (m["name"] == "Unassigned"))
+    return jsonify(sorted(workload.values(), key=order))
 
 
 # ── SERVE FRONTEND ────────────────────────────────────────────────────────────
@@ -1080,20 +1165,6 @@ def serve_frontend(path):
 
 if __name__ == "__main__":
     db.init_db()
-    # Also ensure goals table exists
-    with db.get_conn() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS goals (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                title       TEXT NOT NULL,
-                owner_name  TEXT,
-                target_date TEXT,
-                progress    INTEGER DEFAULT 0,
-                status      TEXT DEFAULT 'active',
-                notes       TEXT,
-                created_at  TEXT DEFAULT (datetime('now'))
-            )
-        """)
     # Railway sets PORT; do not set PORT in Railway — it injects the correct one
     port = int(os.environ.get("PORT", 5001))
     print(f"🌐 CS Dashboard API running on port {port}")

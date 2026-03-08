@@ -395,6 +395,7 @@
   }
 
   .pipeline-item:hover { border-color: var(--accent); }
+  .pipeline-item-jira { border-left: 3px solid var(--accent2); }
   .pipeline-item-owner { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
 
   /* ── ISSUE BARS ── */
@@ -409,44 +410,6 @@
   .issue-bar-track { flex: 1; height: 6px; background: var(--border2); border-radius: 3px; overflow: hidden; }
   .issue-bar-fill  { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
   .issue-bar-count { font-size: 12px; font-family: var(--mono); color: var(--muted); min-width: 30px; text-align: right; }
-
-  /* ── GOALS ── */
-  .goal-item {
-    padding: 14px 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .goal-item:last-child { border-bottom: none; }
-
-  .goal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-
-  .goal-title { font-weight: 600; font-size: 14px; }
-
-  .goal-meta {
-    font-size: 11px;
-    color: var(--muted);
-    font-family: var(--mono);
-    margin-bottom: 8px;
-  }
-
-  .progress-track {
-    height: 6px;
-    background: var(--border2);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    border-radius: 3px;
-    background: linear-gradient(90deg, var(--accent2), var(--accent));
-    transition: width 0.6s ease;
-  }
 
   /* ── AI PANEL ── */
   .ai-output {
@@ -495,6 +458,17 @@
     max-width: 90vw;
     max-height: 85vh;
     overflow-y: auto;
+  }
+
+  .client-detail-modal-large {
+    width: 800px;
+    max-width: 92vw;
+    max-height: 90vh;
+  }
+  .cd-content-scroll {
+    max-height: calc(90vh - 140px);
+    overflow-y: auto;
+    margin-bottom: 16px;
   }
 
   .modal-title {
@@ -690,6 +664,10 @@
   .dot-green  { background: var(--success); }
   .dot-warn   { background: var(--warn); }
   .dot-danger { background: var(--danger); }
+
+  .escalation-picker-wrap { max-height: 340px; overflow-y: auto; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .escalation-picker-wrap .grooming-table { margin: 0; }
+  .escalation-picker-wrap .grooming-table th { position: sticky; top: 0; background: var(--card); z-index: 1; }
 </style>
 </head>
 <body>
@@ -731,6 +709,9 @@
     <div class="nav-item" onclick="nav('grooming')" id="nav-grooming">
       <span class="nav-icon">🎫</span> Ticket Grooming
     </div>
+    <div class="nav-item" onclick="nav('oncall')" id="nav-oncall">
+      <span class="nav-icon">📟</span> Oncall
+    </div>
     <div class="nav-item" onclick="nav('workload')" id="nav-workload">
       <span class="nav-icon">👥</span> Team Workload
     </div>
@@ -745,9 +726,6 @@
     </div>
     <div class="nav-item" onclick="nav('escalations')" id="nav-escalations">
       <span class="nav-icon">📤</span> Escalation to Product
-    </div>
-    <div class="nav-item" onclick="nav('goals')" id="nav-goals">
-      <span class="nav-icon">🎯</span> Team Goals
     </div>
     <div class="nav-item" onclick="nav('scopeuat')" id="nav-scopeuat">
       <span class="nav-icon">📄</span> Scope & UAT
@@ -869,64 +847,49 @@
       </div>
     </div>
 
-    <!-- WORKLOAD -->
+    <!-- ONCALL ONE-PAGER (summary, analysis, tickets, monthly report) -->
+    <div class="page" id="page-oncall">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Oncall tracker</div>
+          <div class="page-sub">One stop shop — CS- tickets, summary, and monthly report. Linked to <a href="#" onclick="nav('grooming');return false" style="color:var(--accent)">Ticket Grooming</a></div>
+        </div>
+        <button class="btn-sm accent" onclick="loadOncall()">↻ Refresh</button>
+      </div>
+      <div id="oncall-summary"></div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">Open oncall tickets</div>
+        <div id="oncall-list"></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">Monthly report</div>
+        <div id="oncall-report"></div>
+      </div>
+    </div>
+
+    <!-- WORKLOAD (from grooming + pipeline, engineers mapped) -->
     <div class="page" id="page-workload">
       <div class="page-header">
-        <div class="page-title">Team Workload</div>
+        <div>
+          <div class="page-title">Team Workload</div>
+          <div class="page-sub">Populated from Ticket Grooming (Jira assignees) and Pipeline (project owners). Map engineers in JIRA_TO_SLACK.</div>
+        </div>
+        <button class="btn-sm accent" onclick="loadWorkload()">↻ Refresh</button>
       </div>
       <div id="workload-list"></div>
     </div>
 
-    <!-- MY DOCKET -->
+    <!-- MY DOCKET (relevant, high-risk only) -->
     <div class="page" id="page-docket">
       <div class="page-header">
         <div>
           <div class="page-title">My Docket</div>
-          <div class="page-sub">Everything in one place — brief, pipeline, calendar, live accounts</div>
+          <div class="page-sub">Relevant, high-risk items — do first, at risk, stale, overdue</div>
         </div>
+        <button class="btn-sm accent" onclick="loadDocket()">↻ Refresh</button>
       </div>
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title">📋 At a glance</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Morning brief summary and pipeline snapshot. Use the Brief and Pipeline pages for full detail.</p>
-          <button class="btn-sm accent" onclick="nav('brief')">Open Brief</button>
-          <button class="btn-sm" style="margin-left:8px" onclick="nav('pipeline')">Open Pipeline</button>
-        </div>
-        <div class="card placeholder-card">
-          <div class="card-title">📅 Calendar</div>
-          <p style="font-size:13px;color:var(--muted);">Coming soon — your calendar in one view.</p>
-        </div>
-        <div class="card placeholder-card">
-          <div class="card-title">🟢 Live account monitoring</div>
-          <p style="font-size:13px;color:var(--muted);">Coming soon — catch issues on time for live accounts.</p>
-        </div>
-        <div class="card">
-          <div class="card-title">🧠 Brain dump</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Log wins, blockers, lessons. Integrated into AI monthly reports and on-request reports.</p>
-          <div class="form-field" style="margin-bottom:8px">
-            <label class="form-label">Date (optional)</label>
-            <input class="form-input" type="date" id="bd-date" />
-          </div>
-          <div class="form-field" style="margin-bottom:8px">
-            <input class="form-input" id="bd-wins" placeholder="Wins" />
-          </div>
-          <div class="form-field" style="margin-bottom:8px">
-            <input class="form-input" id="bd-blockers" placeholder="Blockers" />
-          </div>
-          <div class="form-field" style="margin-bottom:10px">
-            <input class="form-input" id="bd-lessons" placeholder="Lessons" />
-          </div>
-          <button class="btn-sm accent" onclick="submitBrainDump()">Save brain dump</button>
-          <div id="brain-dumps-recent" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
-        </div>
-        <div class="card" style="grid-column:1/-1">
-          <div class="card-title">📊 Monthly summary (last 30 days)</div>
-          <div class="page-sub" style="margin-bottom:12px">What was shipped, resolved, issues logged, blockers. Brain dumps are included in the AI report.</div>
-          <div id="monthly-summary"></div>
-          <button class="btn-sm accent" style="margin-top:12px" onclick="generateMonthlyReport()">Generate monthly report (AI)</button>
-          <div class="ai-output" id="monthly-report-output" style="display:none;margin-top:12px;white-space:pre-wrap"></div>
-        </div>
-      </div>
+      <div id="docket-content"></div>
+      <div id="docket-other" class="card" style="margin-top:16px"></div>
     </div>
 
     <!-- EISENHOWER (planning / prioritising) -->
@@ -974,7 +937,7 @@
       <div class="card" style="margin-bottom:16px">
         <div class="card-title">✨ Draft with AI — select tickets</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Pick one or more Jira tickets; AI will suggest a title and draft the full product scope.</p>
-        <div id="escalation-ticket-picker" style="max-height:200px;overflow-y:auto;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px"></div>
+        <div id="escalation-ticket-picker" class="escalation-picker-wrap"></div>
         <button type="button" class="btn-accent" id="escalation-ai-btn" onclick="generateEscalationFromTickets()">Generate product scope with AI</button>
       </div>
       <div class="card">
@@ -1002,18 +965,6 @@
           <div id="issue-list"></div>
         </div>
       </div>
-    </div>
-
-    <!-- GOALS -->
-    <div class="page" id="page-goals">
-      <div class="page-header">
-        <div>
-          <div class="page-title">Team Goals</div>
-          <div class="page-sub">Living tracker — not a doc nobody opens</div>
-        </div>
-        <button class="btn-sm accent" id="add-goal-btn" onclick="openAddGoal()">+ Add Goal</button>
-      </div>
-      <div id="goals-list"></div>
     </div>
 
     <!-- SCOPE & UAT (delivery scope + UAT signoff, PDF on request) -->
@@ -1115,11 +1066,11 @@
   </main>
 </div>
 
-<!-- CLIENT DETAIL MODAL (report + issues) -->
+<!-- CLIENT DETAIL MODAL (report + issues + analysis notes) -->
 <div class="modal-overlay" id="client-detail-modal">
-  <div class="modal" style="max-width:560px">
+  <div class="modal client-detail-modal-large">
     <div class="modal-title" id="cd-name">Client</div>
-    <div id="cd-content"></div>
+    <div id="cd-content" class="cd-content-scroll"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('client-detail-modal')">Close</button>
       <button class="btn-accent" id="cd-draft-btn" onclick="cdGenerateDraft()">Generate client update draft</button>
@@ -1334,29 +1285,6 @@
   </div>
 </div>
 
-<!-- GOAL MODAL -->
-<div class="modal-overlay" id="goal-modal">
-  <div class="modal">
-    <div class="modal-title">Add Goal</div>
-    <div class="form-field">
-      <label class="form-label">Goal Title</label>
-      <input class="form-input" id="gm-title" placeholder="e.g. Zero missed SLAs in Q3" />
-    </div>
-    <div class="form-field">
-      <label class="form-label">Owner</label>
-      <input class="form-input" id="gm-owner" placeholder="Person responsible" />
-    </div>
-    <div class="form-field">
-      <label class="form-label">Target Date</label>
-      <input class="form-input" type="date" id="gm-date" />
-    </div>
-    <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal('goal-modal')">Cancel</button>
-      <button class="btn-accent" onclick="submitGoal()">Add Goal</button>
-    </div>
-  </div>
-</div>
-
 <!-- ESCALATION MODAL (add/edit) -->
 <div class="modal-overlay" id="escalation-modal">
   <div class="modal" style="max-width:520px">
@@ -1474,10 +1402,6 @@ function showApp() {
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("app").style.display = "block";
   document.getElementById("sidebar-name").textContent = USER.name;
-  // Hide add-goal for readonly
-  if (USER.role === "readonly") {
-    document.getElementById("add-goal-btn").style.display = "none";
-  }
   loadBrief();
 }
 
@@ -1495,12 +1419,12 @@ function nav(page) {
     pipeline: loadPipeline,
     clients:  loadClients,
     grooming: loadGrooming,
+    oncall:   loadOncall,
     workload: loadWorkload,
     docket:   loadDocket,
     eisenhower: loadEisenhower,
     escalations: loadEscalations,
     issues:   loadIssues,
-    goals:    loadGoals,
     scopeuat: loadScopeUat,
     ai:       loadAITools,
   };
@@ -1599,14 +1523,17 @@ async function loadBrief() {
       `).join("")
     : `<div class="empty-state">None in last 14 days</div>`;
 
-  // By client
+  // By client (issues = issue log; Jira = tickets linked in grooming)
   const byClient = data.by_client || [];
   document.getElementById("brief-by-client").innerHTML = byClient.length
     ? byClient.map(c => {
-        const hasAttention = (c.at_risk_count || 0) > 0 || (c.stale_count || 0) > 0 || (c.open_issues || 0) > 0;
+        const issues = c.open_issues || 0;
+        const jira = c.jira_tickets || 0;
+        const hasAttention = (c.at_risk_count || 0) > 0 || (c.stale_count || 0) > 0 || issues > 0 || jira > 0;
+        const issuesLine = jira > 0 ? `${issues} issues · ${jira} Jira` : `${issues} issues`;
         return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
           <span style="font-weight:600;font-size:13px">${escapeHtml(c.client_name)}</span>
-          <span style="font-size:12px;color:var(--muted)">${c.project_count} projects · ${c.at_risk_count || 0} at risk · ${c.stale_count || 0} stale · ${c.open_issues || 0} issues</span>
+          <span style="font-size:12px;color:var(--muted)">${c.project_count} projects · ${c.at_risk_count || 0} at risk · ${c.stale_count || 0} stale · ${issuesLine}</span>
         </div>`;
       }).join("")
     : `<div class="empty-state">No clients yet</div>`;
@@ -1706,16 +1633,26 @@ async function openClientDetail(cid) {
   const jiraResp = await api("GET", `/api/jira/grooming?client=${encodeURIComponent(c.name)}`);
   const jiraTickets = (jiraResp && jiraResp.configured && jiraResp.tickets) ? jiraResp.tickets : [];
   const jiraSection = jiraTickets.length
-    ? `<div style="margin-bottom:12px"><strong>Jira tickets (matching "${escapeHtml(c.name)}")</strong><div style="margin-top:6px;max-height:160px;overflow-y:auto">${jiraTickets.map(t => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><a href="${escapeHtml(t.url || "#")}" target="_blank" rel="noopener" class="jira-key" style="margin-right:8px">${escapeHtml(t.key)}</a>${escapeHtml((t.summary || "").slice(0, 60))}${(t.summary || "").length > 60 ? "…" : ""}</div>`).join("")}</div></div>`
+    ? `<div style="margin-bottom:14px"><strong>Jira tickets (matching "${escapeHtml(c.name)}")</strong><div style="margin-top:6px;max-height:280px;overflow-y:auto">${jiraTickets.map(t => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><a href="${escapeHtml(t.url || "#")}" target="_blank" rel="noopener" class="jira-key" style="margin-right:8px">${escapeHtml(t.key)}</a>${escapeHtml((t.summary || "").slice(0, 70))}${(t.summary || "").length > 70 ? "…" : ""}</div>`).join("")}</div></div>`
     : "";
+  const notesValue = (c.notes != null && c.notes !== undefined) ? String(c.notes) : "";
   document.getElementById("cd-name").textContent = c.name;
   document.getElementById("cd-content").innerHTML = `
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Projects: ${projects.length} · Open issues: ${openIssues.length}${jiraTickets.length ? ` · Jira tickets: ${jiraTickets.length}` : ""}</div>
-    <div style="margin-bottom:12px"><strong>Projects</strong><div style="margin-top:6px">${projects.length ? projects.map(p => `<span class="tag tag-gray" style="margin-right:6px;margin-bottom:6px">${escapeHtml(p.name || p.client)} · ${escapeHtml(p.stage || "")}</span>`).join("") : "—"}</div></div>
-    <div style="margin-bottom:12px"><strong>Open issues</strong><div style="margin-top:6px;max-height:120px;overflow-y:auto">${openIssues.length ? openIssues.map(i => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">${escapeHtml(i.title)} <span class="tag" style="font-size:10px">${escapeHtml(i.category || "")}</span></div>`).join("") : "No open issues"}</div></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Projects: ${projects.length} · Open issues: ${openIssues.length}${jiraTickets.length ? ` · Jira tickets: ${jiraTickets.length}` : ""}</div>
+    <div style="margin-bottom:14px"><strong>Projects</strong><div style="margin-top:6px">${projects.length ? projects.map(p => `<span class="tag tag-gray" style="margin-right:6px;margin-bottom:6px">${escapeHtml(p.name || p.client)} · ${escapeHtml(p.stage || "")}</span>`).join("") : "—"}</div></div>
+    <div style="margin-bottom:14px"><strong>Open issues</strong><div style="margin-top:6px;max-height:140px;overflow-y:auto">${openIssues.length ? openIssues.map(i => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">${escapeHtml(i.title)} <span class="tag" style="font-size:10px">${escapeHtml(i.category || "")}</span></div>`).join("") : "No open issues"}</div></div>
     ${jiraSection}
+    <div style="margin-bottom:8px"><strong>Analysis notes</strong></div>
+    <textarea class="form-textarea" id="cd-notes" rows="4" placeholder="Context, risks, action items, follow-ups…" style="min-height:100px;margin-bottom:8px;font-size:13px">${escapeHtml(notesValue)}</textarea>
+    <button type="button" class="btn-sm accent" onclick="saveClientNotes(${cid})">Save notes</button>
   `;
   document.getElementById("client-detail-modal").classList.add("open");
+}
+async function saveClientNotes(cid) {
+  const notes = document.getElementById("cd-notes") && document.getElementById("cd-notes").value;
+  const res = await api("PATCH", `/api/clients/${cid}`, { notes: notes != null ? notes : "" });
+  if (res && res.ok) showToast("Notes saved");
+  else showToast(res?.error || "Failed to save");
 }
 async function cdGenerateDraft() {
   if (!_currentClientId) return;
@@ -1741,15 +1678,22 @@ async function generateClientUpdateForClient(cid) {
   nav("ai");
 }
 
-// ── PIPELINE ──────────────────────────────────────────────────────────────────
+// ── PIPELINE (DB projects + Jira project tickets from grooming) ─────────────────
 async function loadPipeline() {
-  const [projects, clients] = await Promise.all([api("GET", "/api/projects"), api("GET", "/api/clients")]);
+  const [projects, jiraData, clients] = await Promise.all([
+    api("GET", "/api/projects"),
+    api("GET", "/api/jira/pipeline-tickets"),
+    api("GET", "/api/clients"),
+  ]);
   if (!projects) return;
 
   const stages = ["Discovery","Config","Integration","UAT","Go-Live","Hypercare"];
   const byStage = {};
   stages.forEach(s => byStage[s] = []);
-  projects.forEach(p => { if (byStage[p.stage]) byStage[p.stage].push(p); });
+  projects.forEach(p => { if (byStage[p.stage]) byStage[p.stage].push({ type: "project", ...p }); });
+  (jiraData && jiraData.tickets || []).forEach(t => {
+    if (byStage[t.stage]) byStage[t.stage].push({ type: "jira", ...t });
+  });
 
   document.getElementById("pipeline-board").innerHTML = stages.map(stage => `
     <div class="pipeline-col">
@@ -1757,13 +1701,21 @@ async function loadPipeline() {
         ${STAGE_EMOJI[stage]} ${stage}
         <span class="pipeline-count">${byStage[stage].length}</span>
       </div>
-      ${byStage[stage].map(p => `
-        <div class="pipeline-item" onclick="openProjectDetail(${p.id})">
+      ${byStage[stage].map(item => {
+        if (item.type === "jira") {
+          return `<div class="pipeline-item pipeline-item-jira">
+            <a href="${item.url}" target="_blank" rel="noopener" class="jira-key" style="font-size:12px;margin-bottom:4px">${item.key}</a>
+            <div style="font-size:13px">${escapeHtml((item.summary || "").slice(0, 50))}${(item.summary || "").length > 50 ? "…" : ""}</div>
+            <div class="pipeline-item-owner">${item.assignee || "—"}</div>
+          </div>`;
+        }
+        const p = item;
+        return `<div class="pipeline-item" onclick="openProjectDetail(${p.id})">
           <div>${p.client}</div>
           <div class="pipeline-item-owner">${p.owner_name || "—"}${p.recon_name ? " · Recon: " + p.recon_name : ""}</div>
           ${p.health !== "On Track" ? `<div style="margin-top:4px"><span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span></div>` : ""}
-        </div>
-      `).join("")}
+        </div>`;
+      }).join("")}
     </div>
   `).join("");
 
@@ -1817,7 +1769,13 @@ async function loadGrooming() {
   const statuses = [...new Set(_groomingTickets.map(t => t.status).filter(Boolean))].sort();
   const assignees = [...new Set(_groomingTickets.map(t => t.assignee).filter(Boolean))].sort();
   filterEl.innerHTML = `
-    <span style="font-size:12px;color:var(--muted);font-weight:600">Status:</span>
+    <span style="font-size:12px;color:var(--muted);font-weight:600">Type:</span>
+    <select class="form-select" id="grooming-type-filter" style="width:auto;min-width:120px" onchange="filterGroomingTable()">
+      <option value="">All</option>
+      <option value="project">Projects</option>
+      <option value="oncall">Oncall</option>
+    </select>
+    <span style="font-size:12px;color:var(--muted);font-weight:600;margin-left:16px">Status:</span>
     <select class="form-select" id="grooming-status-filter" style="width:auto;min-width:140px" onchange="filterGroomingTable()">
       <option value="">All</option>
       ${statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}
@@ -1827,21 +1785,27 @@ async function loadGrooming() {
       <option value="">All</option>
       ${assignees.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("")}
     </select>
+    <a href="#" onclick="nav('oncall');return false;" style="margin-left:auto;font-size:12px;color:var(--accent)">Oncall tracker →</a>
   `;
   filterGroomingTable();
 }
 
 function filterGroomingTable() {
+  const typeSelect = document.getElementById("grooming-type-filter");
   const statusSelect = document.getElementById("grooming-status-filter");
   const assigneeSelect = document.getElementById("grooming-assignee-filter");
+  const typeFilter = typeSelect ? typeSelect.value : "";
   const statusFilter = statusSelect ? statusSelect.value : "";
   const assigneeFilter = assigneeSelect ? assigneeSelect.value : "";
   let tickets = _groomingTickets;
+  if (typeFilter === "oncall") tickets = tickets.filter(t => t.oncall === true);
+  if (typeFilter === "project") tickets = tickets.filter(t => !t.oncall);
   if (statusFilter) tickets = tickets.filter(t => t.status === statusFilter);
   if (assigneeFilter) tickets = tickets.filter(t => (t.assignee || "") === assigneeFilter);
   const el = document.getElementById("grooming-list");
   if (!tickets.length) {
     const parts = [];
+    if (typeFilter) parts.push("type " + (typeFilter === "oncall" ? "Oncall" : "Projects"));
     if (statusFilter) parts.push("status " + statusFilter);
     if (assigneeFilter) parts.push("assignee " + assigneeFilter);
     el.innerHTML = `<div class="empty-state">No tickets${parts.length ? " with " + parts.join(" and ") : ""}.</div>`;
@@ -1853,9 +1817,10 @@ function filterGroomingTable() {
       <tbody>${tickets.map(t => {
         const selectedId = _groomingClientLinks[t.key] || "";
         const opts = `<option value="">—</option>${_groomingClients.map(c => `<option value="${c.id}"${c.id == selectedId ? " selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}`;
+        const oncallBadge = t.oncall ? '<span class="tag tag-warn" style="margin-left:6px" title="Oncall">Oncall</span>' : '';
         return `
         <tr>
-          <td><a href="${t.url}" target="_blank" rel="noopener" class="jira-key">${t.key}</a></td>
+          <td><a href="${t.url}" target="_blank" rel="noopener" class="jira-key">${t.key}</a>${oncallBadge}</td>
           <td class="jira-summary">${t.summary}</td>
           <td><span class="tag tag-gray">${t.status}</span></td>
           <td><select class="form-select grooming-client-select" style="width:100%;min-width:120px;font-size:12px;padding:6px 8px" data-key="${escapeHtml(t.key)}" onchange="setGroomingTicketClient(this)">${opts}</select></td>
@@ -1877,6 +1842,109 @@ async function setGroomingTicketClient(selectEl) {
     if (!clientId) delete _groomingClientLinks[key];
     showToast(clientId ? "Client linked" : "Client unlinked");
   } else showToast(res?.error || "Failed to save");
+}
+
+// ── ONCALL ONE-PAGER (summary, analysis, tickets, monthly report) ─────────────
+async function loadOncall() {
+  const [data, summaryResp, engineers] = await Promise.all([
+    api("GET", "/api/jira/oncall"),
+    api("GET", "/api/jira/oncall/summary"),
+    api("GET", "/api/jira/engineers"),
+  ]);
+  const summaryEl = document.getElementById("oncall-summary");
+  const listEl = document.getElementById("oncall-list");
+  const reportEl = document.getElementById("oncall-report");
+
+  if (!data || !data.configured) {
+    summaryEl.innerHTML = "";
+    listEl.innerHTML = `<div class="empty-state">Jira not configured, or no oncall (CS-) tickets.</div>`;
+    reportEl.innerHTML = "";
+    return;
+  }
+
+  const tickets = data.tickets || [];
+  _groomingTickets = tickets;
+  _groomingEngineers = Array.isArray(engineers) ? engineers : [];
+  const summary = (summaryResp && summaryResp.configured && summaryResp.summary) ? summaryResp.summary : null;
+
+  // Summary / analysis card
+  if (summary) {
+    const total = summary.total_open || 0;
+    const unassigned = summary.unassigned_count || 0;
+    const byStatus = summary.by_status || {};
+    const byAssignee = summary.by_assignee || {};
+    const oldest = summary.oldest_ticket;
+    const statusLines = Object.entries(byStatus).sort((a, b) => b[1] - a[1]).map(([s, c]) => `${s}: ${c}`).join(" · ");
+    const assigneeLines = Object.entries(byAssignee).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([a, c]) => `${a}: ${c}`).join(" · ");
+    let analysis = `${total} open oncall ticket${total !== 1 ? "s" : ""}`;
+    if (unassigned > 0) analysis += `, ${unassigned} unassigned`;
+    if (statusLines) analysis += `. Status: ${statusLines}`;
+    if (oldest) analysis += `. Oldest: ${oldest.key} (${(oldest.updated || "").slice(0, 10)})`;
+    summaryEl.innerHTML = `
+      <div class="card">
+        <div class="card-title">Summary &amp; analysis</div>
+        <p style="font-size:13px;color:var(--text);margin-bottom:10px">${escapeHtml(analysis)}</p>
+        <div class="grid-2" style="gap:12px;font-size:12px;color:var(--muted)">
+          <div><strong style="color:var(--text)">Total open</strong> ${total}</div>
+          <div><strong style="color:var(--text)">Unassigned</strong> ${unassigned}</div>
+          ${statusLines ? `<div style="grid-column:1/-1"><strong style="color:var(--text)">By status</strong> ${escapeHtml(statusLines)}</div>` : ""}
+          ${assigneeLines ? `<div style="grid-column:1/-1"><strong style="color:var(--text)">By assignee</strong> ${escapeHtml(assigneeLines)}</div>` : ""}
+          ${oldest ? `<div style="grid-column:1/-1"><strong style="color:var(--text)">Oldest open</strong> <a href="#" class="jira-key">${escapeHtml(oldest.key)}</a> — ${escapeHtml((oldest.summary || "").slice(0, 50))}${(oldest.summary || "").length > 50 ? "…" : ""} (${(oldest.updated || "").slice(0, 10)})</div>` : ""}
+        </div>
+      </div>`;
+  } else {
+    summaryEl.innerHTML = "";
+  }
+
+  // Open tickets table
+  if (!tickets.length) {
+    listEl.innerHTML = `<div class="empty-state">No oncall tickets (CS-*) right now. <a href="#" onclick="nav('grooming');return false" style="color:var(--accent)">Ticket Grooming</a></div>`;
+  } else {
+    listEl.innerHTML = `
+      <table class="grooming-table">
+        <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Updated</th><th>Action</th></tr></thead>
+        <tbody>${tickets.map(t => `
+          <tr>
+            <td><a href="${t.url}" target="_blank" rel="noopener" class="jira-key">${t.key}</a> <span class="tag tag-warn">Oncall</span></td>
+            <td class="jira-summary">${escapeHtml(t.summary || "")}</td>
+            <td><span class="tag tag-gray">${t.status || ""}</span></td>
+            <td>${t.assignee || "—"}</td>
+            <td style="font-size:11px;color:var(--muted);font-family:var(--mono)">${t.updated ? t.updated.slice(0,10) : "—"}</td>
+            <td><button type="button" class="btn-sm accent" onclick="openRequestUpdateModal('${(t.key || "").replace(/'/g, "\\'")}')">Request update</button></td>
+          </tr>
+        `).join("")}</tbody>
+      </table>`;
+  }
+
+  // Monthly report section — period selector + Download PDF
+  reportEl.innerHTML = `
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Tickets updated in the selected period (open or closed). Download as PDF for sharing or records.</p>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--muted);font-weight:600">Period</span>
+      <select class="form-select" id="oncall-report-days" style="width:auto;min-width:100px">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+      <button type="button" class="btn-sm accent" id="oncall-download-pdf">Download monthly report PDF</button>
+    </div>`;
+  document.getElementById("oncall-download-pdf").addEventListener("click", async function(e) {
+    e.preventDefault();
+    const days = document.getElementById("oncall-report-days").value;
+    const url = `${API}/api/jira/oncall/monthly-report.pdf?days=${days}`;
+    try {
+      const r = await fetch(url, { headers: { "Authorization": "Bearer " + (TOKEN || "") } });
+      if (!r.ok) throw new Error("Download failed");
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "oncall-report-" + days + "days.pdf";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) {
+      showToast(err.message || "Failed to download PDF");
+    }
+  });
 }
 
 function openRequestUpdateModal(ticketKey) {
@@ -1915,34 +1983,118 @@ async function submitRequestUpdate() {
 }
 
 async function loadDocket() {
-  const [data, reflections] = await Promise.all([
-    api("GET", "/api/summary/monthly?days=30"),
-    api("GET", "/api/reflections?days=7"),
-  ]);
-  if (!data) return;
-  const el = document.getElementById("monthly-summary");
-  const s = data.shipped || [];
-  const res = data.resolved_issues || [];
-  const opened = data.issues_logged || [];
-  const blockers = data.blockers_from_reflections || [];
-  const brainDumps = data.brain_dumps || [];
-  el.innerHTML = `
-    <div class="grid-2" style="gap:16px;margin-top:8px">
-      <div><strong>Shipped (Done)</strong> ${s.length}</div>
-      <div><strong>Issues resolved</strong> ${res.length}</div>
-      <div><strong>Issues logged</strong> ${opened.length}</div>
-      <div><strong>Blockers (reflections)</strong> ${blockers.length}</div>
-      <div><strong>Brain dumps (30d)</strong> ${brainDumps.length}</div>
+  const data = await api("GET", "/api/brief");
+  const el = document.getElementById("docket-content");
+  if (!el) return;
+  if (!data) {
+    el.innerHTML = `<div class="empty-state">Could not load docket.</div>`;
+    return;
+  }
+  const pending = data.pending_do_first || [];
+  const atRisk = data.at_risk || [];
+  const stale = data.stale || [];
+  const goLiveOverdue = data.go_live_overdue || [];
+  const openIssues = data.open_issues || [];
+  const jira = data.jira || {};
+  const jiraBlocked = (jira.blocked || []).slice(0, 5);
+  const hasAny = pending.length > 0 || atRisk.length > 0 || stale.length > 0 || goLiveOverdue.length > 0 || openIssues.length > 0 || jiraBlocked.length > 0;
+
+  function rowClick(item) {
+    if (item.project && item.project.id) return `onclick="openProjectDetail(${item.project.id})"`;
+    if (item.ticket && item.ticket.url) return `onclick="window.open('${(item.ticket.url || "").replace(/'/g, "\\'")}', '_blank')"`;
+    return "";
+  }
+  function tagClass(type) {
+    if (type === "at_risk" || type === "jira_blocked") return "danger";
+    if (type === "overdue") return "warn";
+    return "warn";
+  }
+
+  el.innerHTML = hasAny ? `
+    <div class="card">
+      <div class="card-title">🎯 Do first</div>
+      <div style="max-height:320px;overflow-y:auto">
+        ${pending.length ? pending.map(item => `
+          <div class="project-row" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:${item.project || item.ticket ? "pointer" : "default"}" ${rowClick(item)}>
+            <span class="tag tag-${tagClass(item.type)}" style="font-size:10px;margin-right:8px">${(item.type || "").replace(/_/g, " ")}</span>
+            <span style="font-size:13px">${escapeHtml(item.label)}</span>
+          </div>
+        `).join("") : "<div class=\"empty-state\">Nothing pending</div>"}
+      </div>
     </div>
-    ${s.length ? `<div style="margin-top:12px"><strong>Projects moved to Done:</strong> ${s.map(p => p.client).join(", ") || "—"}</div>` : ""}
-    ${blockers.length ? `<div style="margin-top:8px;font-size:12px;color:var(--muted)">Blockers from reflections: ${blockers.map(r => r.date + ": " + (r.blockers || "").slice(0,80)).join("; ")}</div>` : ""}
+    <div class="grid-2" style="margin-top:16px;gap:16px">
+      <div class="card">
+        <div class="card-title">🔴 At risk</div>
+        ${atRisk.length ? atRisk.slice(0, 6).map(p => `
+          <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
+            <span class="health-dot dot-${p.health === "Blocked" ? "danger" : "warn"}"></span>
+            <span class="project-client">${escapeHtml(p.client)}</span>
+            <span class="tag tag-${p.health === "Blocked" ? "danger" : "warn"}">${p.health}</span>
+          </div>
+        `).join("") + (atRisk.length > 6 ? `<div style="padding:8px 0;font-size:12px;color:var(--muted)">+ ${atRisk.length - 6} more</div>` : "") : "<div class=\"empty-state\">All clear</div>"}
+      </div>
+      <div class="card">
+        <div class="card-title">⏰ Stale (no update 24h+)</div>
+        ${stale.length ? stale.slice(0, 6).map(p => `
+          <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
+            <span class="project-client">${escapeHtml(p.client)}</span>
+            <span style="font-size:12px;color:var(--muted)">${p.owner_name || "—"}</span>
+          </div>
+        `).join("") + (stale.length > 6 ? `<div style="padding:8px 0;font-size:12px;color:var(--muted)">+ ${stale.length - 6} more</div>` : "") : "<div class=\"empty-state\">None</div>"}
+      </div>
+      <div class="card">
+        <div class="card-title">📅 Go-live overdue</div>
+        ${goLiveOverdue.length ? goLiveOverdue.slice(0, 5).map(p => `
+          <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
+            <span class="project-client">${escapeHtml(p.client)}</span>
+            <span style="font-size:12px;color:var(--muted)">was ${p.go_live || ""}</span>
+          </div>
+        `).join("") : "<div class=\"empty-state\">None</div>"}
+      </div>
+      <div class="card">
+        <div class="card-title">🐛 Open issues</div>
+        ${openIssues.length ? `
+          <div style="padding:8px 0">${openIssues.length} open. <a href="#" onclick="nav('issues');return false" style="color:var(--accent);font-size:13px">View Issues</a></div>
+          ${openIssues.slice(0, 3).map(i => `<div style="padding:6px 0;font-size:12px;border-bottom:1px solid var(--border)">${escapeHtml((i.title || "").slice(0, 45))}${(i.title || "").length > 45 ? "…" : ""}</div>`).join("")}
+        ` : "<div class=\"empty-state\">None</div>"}
+      </div>
+    </div>
+    ${jiraBlocked.length ? `
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">🔧 Jira blocked</div>
+      <div style="font-size:13px">
+        ${jiraBlocked.map(t => `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><a href="${t.url || "#"}" target="_blank" rel="noopener" class="jira-key">${escapeHtml(t.key)}</a> ${escapeHtml((t.summary || "").slice(0, 50))}${(t.summary || "").length > 50 ? "…" : ""}</div>`).join("")}
+      </div>
+    </div>
+    ` : ""}
+  ` : `
+    <div class="card">
+      <div class="empty-state">Nothing high-risk right now.</div>
+      <p style="text-align:center;margin-top:12px"><a href="#" onclick="nav('brief');return false" style="color:var(--accent)">Open full Brief</a></p>
+    </div>
   `;
-  const bdEl = document.getElementById("brain-dumps-recent");
-  if (bdEl) {
-    const list = Array.isArray(reflections) ? reflections : [];
-    bdEl.innerHTML = list.length
-      ? "Recent: " + list.slice(0, 5).map(r => `${r.date}: ${(r.wins || r.blockers || r.lessons || "").slice(0, 40)}…`).join(" · ")
-      : "No brain dumps in last 7 days.";
+
+  // Optional: compact "Other" card (brain dump, monthly report)
+  const otherEl = document.getElementById("docket-other");
+  if (otherEl) {
+    otherEl.innerHTML = `
+      <div class="card-title" style="color:var(--muted);font-size:12px">Other</div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px">Brain dump</div>
+          <input class="form-input" type="date" id="bd-date" style="margin-bottom:6px;font-size:12px" />
+          <input class="form-input" id="bd-wins" placeholder="Wins" style="margin-bottom:6px;font-size:12px" />
+          <input class="form-input" id="bd-blockers" placeholder="Blockers" style="margin-bottom:6px;font-size:12px" />
+          <input class="form-input" id="bd-lessons" placeholder="Lessons" style="margin-bottom:8px;font-size:12px" />
+          <button type="button" class="btn-sm" onclick="submitBrainDump()">Save</button>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px">Monthly report (AI)</div>
+          <button type="button" class="btn-sm" onclick="generateMonthlyReport()">Generate (30d)</button>
+          <div class="ai-output" id="monthly-report-output" style="display:none;margin-top:8px;font-size:12px;white-space:pre-wrap;max-height:120px;overflow-y:auto"></div>
+        </div>
+      </div>
+    `;
   }
 }
 
@@ -2091,13 +2243,21 @@ async function loadEscalations() {
     if (!_escalationTickets.length) {
       pickerEl.innerHTML = "<span style=\"color:var(--muted);font-size:13px\">No Jira tickets. Configure Jira or refresh Ticket Grooming.</span>";
     } else {
-      pickerEl.innerHTML = _escalationTickets.map(t => `
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;white-space:nowrap;max-width:100%">
-          <input type="checkbox" class="escalation-ticket-cb" value="${escapeHtml(t.key)}" data-summary="${escapeHtml((t.summary || "").slice(0, 50))}">
-          <span class="jira-key">${escapeHtml(t.key)}</span>
-          <span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;max-width:180px" title="${escapeHtml(t.summary || "")}">${escapeHtml((t.summary || "").slice(0, 30))}${(t.summary || "").length > 30 ? "…" : ""}</span>
-        </label>
-      `).join("");
+      pickerEl.innerHTML = `
+        <table class="grooming-table">
+          <thead><tr><th style="width:36px"></th><th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th></tr></thead>
+          <tbody>${_escalationTickets.map(t => {
+            const oncallBadge = t.oncall ? '<span class="tag tag-warn" style="margin-left:4px;font-size:10px">Oncall</span>' : '';
+            return `
+            <tr style="cursor:pointer" onclick="this.querySelector('.escalation-ticket-cb').click()">
+              <td><input type="checkbox" class="escalation-ticket-cb" value="${escapeHtml(t.key)}" data-summary="${escapeHtml((t.summary || "").slice(0, 80))}" onclick="event.stopPropagation()"></td>
+              <td><a href="${escapeHtml(t.url || "#")}" target="_blank" rel="noopener" class="jira-key" onclick="event.stopPropagation()">${escapeHtml(t.key)}</a>${oncallBadge}</td>
+              <td class="jira-summary" title="${escapeHtml(t.summary || "")}">${escapeHtml((t.summary || "").slice(0, 55))}${(t.summary || "").length > 55 ? "…" : ""}</td>
+              <td><span class="tag tag-gray" style="font-size:11px">${escapeHtml(t.status || "—")}</span></td>
+              <td style="font-size:12px;color:var(--muted)">${escapeHtml(t.assignee || "—")}</td>
+            </tr>`;
+          }).join("")}</tbody>
+        </table>`;
     }
   }
   const list = document.getElementById("escalations-list");
@@ -2251,34 +2411,50 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
-// ── WORKLOAD ──────────────────────────────────────────────────────────────────
+// ── WORKLOAD (from grooming + DB projects, engineers mapped) ───────────────────
 async function loadWorkload() {
   const data = await api("GET", "/api/team/workload");
   if (!data) return;
-  document.getElementById("workload-list").innerHTML = data.length
-    ? data.map(member => `
+  const hasAny = data.length && data.some(m => (m.projects && m.projects.length) || (m.tickets && m.tickets.length));
+  document.getElementById("workload-list").innerHTML = hasAny
+    ? data.map(member => {
+        const projects = member.projects || [];
+        const tickets = member.tickets || [];
+        const total = projects.length + tickets.length;
+        if (total === 0) return "";
+        const sub = [projects.length ? projects.length + " projects" : "", tickets.length ? tickets.length + " tickets" : ""].filter(Boolean).join(" · ");
+        return `
         <div class="workload-card">
           <div class="workload-header">
             <div>
-              <div class="workload-name">${member.name}</div>
-              <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px">${member.projects.length} projects</div>
+              <div class="workload-name">${escapeHtml(member.name)}</div>
+              <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px">${sub}</div>
             </div>
             <div style="display:flex;gap:8px;align-items:center">
-              ${member.at_risk > 0 ? `<span class="tag tag-danger">${member.at_risk} at risk</span>` : `<span class="tag tag-green">all clear</span>`}
+              ${member.at_risk > 0 ? `<span class="tag tag-danger">${member.at_risk} at risk</span>` : (total ? `<span class="tag tag-green">on track</span>` : "")}
             </div>
           </div>
           <div>
-            ${member.projects.map(p => `
-              <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+            ${projects.map(p => `
+              <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
                 <span class="health-dot dot-${HEALTH_COLORS[p.health]==='green'?'green':HEALTH_COLORS[p.health]==='warn'?'warn':'danger'}"></span>
-                <span style="font-size:13px;font-weight:600;flex:1">${p.client}</span>
-                <span class="tag tag-gray">${p.stage}</span>
+                <span style="font-size:13px;font-weight:600;flex:1">${escapeHtml(p.client)}</span>
+                <span class="tag tag-gray">${escapeHtml(p.stage || "")}</span>
+              </div>
+            `).join("")}
+            ${tickets.map(t => `
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+                <a href="${t.url || "#"}" target="_blank" rel="noopener" class="jira-key" style="flex-shrink:0">${escapeHtml(t.key)}</a>
+                ${t.oncall ? '<span class="tag tag-warn" style="font-size:10px">Oncall</span>' : ""}
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(t.summary || "")}">${escapeHtml((t.summary || "").slice(0, 40))}${(t.summary || "").length > 40 ? "…" : ""}</span>
+                <span class="tag tag-gray" style="font-size:10px">${escapeHtml(t.status || "")}</span>
               </div>
             `).join("")}
           </div>
         </div>
-      `).join("")
-    : `<div class="empty-state">No team data yet. Add projects with owners first.</div>`;
+      `;
+      }).filter(Boolean).join("")
+    : `<div class="empty-state">No team data yet. Assign owners to projects (Pipeline) or assignees to Jira tickets (Ticket Grooming).</div>`;
 }
 
 // ── ISSUES ────────────────────────────────────────────────────────────────────
@@ -2314,42 +2490,6 @@ async function loadIssues() {
         </div>
       `).join("")
     : `<div class="empty-state">No open issues</div>`;
-}
-
-// ── GOALS ─────────────────────────────────────────────────────────────────────
-async function loadGoals() {
-  const goals = await api("GET", "/api/goals");
-  if (!goals) return;
-  document.getElementById("goals-list").innerHTML = goals.length
-    ? goals.map(g => `
-        <div class="card goal-item">
-          <div class="goal-header">
-            <div class="goal-title">${g.title}</div>
-            <span class="tag tag-${g.status==='active'?'green':'gray'}">${g.status}</span>
-          </div>
-          <div class="goal-meta">
-            Owner: ${g.owner_name || "—"}
-            ${g.target_date ? ` · Due: ${g.target_date}` : ""}
-          </div>
-          <div style="display:flex;align-items:center;gap:12px">
-            <div class="progress-track" style="flex:1">
-              <div class="progress-fill" style="width:${g.progress||0}%"></div>
-            </div>
-            <span style="font-size:12px;font-family:var(--mono);color:var(--accent);min-width:35px">${g.progress||0}%</span>
-            ${USER.role !== 'readonly' ? `
-              <input type="range" min="0" max="100" value="${g.progress||0}"
-                style="width:80px;accent-color:var(--accent)"
-                onchange="updateGoalProgress(${g.id}, this.value)" />
-            ` : ""}
-          </div>
-        </div>
-      `).join("")
-    : `<div class="empty-state">No goals yet. Add team goals to track progress.</div>`;
-}
-
-async function updateGoalProgress(id, value) {
-  await api("PATCH", `/api/goals/${id}`, { progress: parseInt(value) });
-  showToast(`Progress updated: ${value}%`);
 }
 
 // ── AI TOOLS ──────────────────────────────────────────────────────────────────
@@ -2471,10 +2611,6 @@ function openAddIssue() {
   document.getElementById("issue-modal").classList.add("open");
 }
 
-function openAddGoal() {
-  document.getElementById("goal-modal").classList.add("open");
-}
-
 function closeModal(id) {
   document.getElementById(id).classList.remove("open");
 }
@@ -2512,19 +2648,6 @@ async function submitIssue() {
   closeModal("issue-modal");
   showToast("Issue logged");
   loadIssues();
-}
-
-async function submitGoal() {
-  const title = document.getElementById("gm-title").value.trim();
-  if (!title) return;
-  await api("POST", "/api/goals", {
-    title,
-    owner_name:  document.getElementById("gm-owner").value,
-    target_date: document.getElementById("gm-date").value || null,
-  });
-  closeModal("goal-modal");
-  showToast("Goal added");
-  loadGoals();
 }
 
 // Close modals on overlay click
