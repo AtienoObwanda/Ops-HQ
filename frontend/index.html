@@ -749,6 +749,9 @@
     <div class="nav-item" onclick="nav('goals')" id="nav-goals">
       <span class="nav-icon">🎯</span> Team Goals
     </div>
+    <div class="nav-item" onclick="nav('scopeuat')" id="nav-scopeuat">
+      <span class="nav-icon">📄</span> Scope & UAT
+    </div>
     <div class="nav-item" onclick="nav('ai')" id="nav-ai">
       <span class="nav-icon">✨</span> AI Tools
     </div>
@@ -987,6 +990,20 @@
       <div id="goals-list"></div>
     </div>
 
+    <!-- SCOPE & UAT (delivery scope + UAT signoff, PDF on request) -->
+    <div class="page" id="page-scopeuat">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Scope & UAT</div>
+          <div class="page-sub">Delivery scope and UAT signoff per project. Generate from AI, edit, download PDF on request.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Projects — Delivery scope & UAT signoff</div>
+        <div id="scopeuat-list"></div>
+      </div>
+    </div>
+
     <!-- AI TOOLS -->
     <div class="page" id="page-ai">
       <div class="page-header">
@@ -1173,20 +1190,54 @@
   </div>
 </div>
 
-<!-- PROJECT DETAIL MODAL (updates + status) -->
+<!-- PROJECT DETAIL MODAL (updates + status + scope & UAT) -->
 <div class="modal-overlay" id="project-detail-modal">
-  <div class="modal" style="max-width:520px">
+  <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
     <div class="modal-title" id="pd-title">Project</div>
     <div id="pd-meta" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
     <div class="card-title" style="margin-bottom:8px">Status updates</div>
-    <div id="pd-updates" style="max-height:200px;overflow-y:auto;margin-bottom:12px;"></div>
+    <div id="pd-updates" style="max-height:180px;overflow-y:auto;margin-bottom:12px;"></div>
     <div class="form-field">
       <label class="form-label">Post update</label>
       <textarea class="form-textarea" id="pd-update-content" placeholder="What's the status? (engineers share progress here)" rows="2"></textarea>
     </div>
-    <div class="modal-actions">
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <div class="card-title" style="margin-bottom:8px">Delivery scope & UAT signoff</div>
+      <div id="pd-scope-block" style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Delivery scope</div>
+        <div id="pd-scope-preview" style="font-size:13px;max-height:60px;overflow-y:auto;margin-bottom:6px;white-space:pre-wrap"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn-sm accent" onclick="generateProjectScope()">Generate with AI</button>
+          <button type="button" class="btn-sm" onclick="downloadProjectPdf('scope')">Download PDF</button>
+          <button type="button" class="btn-sm" onclick="openScopeUatEdit('scope')">Edit</button>
+        </div>
+      </div>
+      <div id="pd-uat-block">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">UAT signoff (from scope)</div>
+        <div id="pd-uat-preview" style="font-size:13px;max-height:60px;overflow-y:auto;margin-bottom:6px;white-space:pre-wrap"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn-sm accent" onclick="generateUatSignoff()">Generate from scope</button>
+          <button type="button" class="btn-sm" onclick="downloadProjectPdf('uat-signoff')">Download PDF</button>
+          <button type="button" class="btn-sm" onclick="openScopeUatEdit('uat')">Edit</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
       <button class="btn-secondary" onclick="closeModal('project-detail-modal')">Close</button>
       <button class="btn-accent" onclick="submitProjectUpdate()">Post update</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCOPE / UAT EDIT MODAL -->
+<div class="modal-overlay" id="scope-uat-edit-modal">
+  <div class="modal" style="max-width:600px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column">
+    <div class="modal-title" id="scope-uat-edit-title">Edit delivery scope</div>
+    <input type="hidden" id="scope-uat-edit-type" value="scope" />
+    <textarea class="form-textarea" id="scope-uat-edit-content" rows="14" style="flex:1;min-height:200px;margin-bottom:12px"></textarea>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('scope-uat-edit-modal')">Cancel</button>
+      <button class="btn-accent" onclick="saveScopeUatEdit()">Save</button>
     </div>
   </div>
 </div>
@@ -1395,6 +1446,7 @@ function nav(page) {
     escalations: loadEscalations,
     issues:   loadIssues,
     goals:    loadGoals,
+    scopeuat: loadScopeUat,
     ai:       loadAITools,
   };
   loaders[page]?.();
@@ -1535,11 +1587,17 @@ async function openClientDetail(cid) {
   const projects = data.projects || [];
   const issues = data.issues || [];
   const openIssues = issues.filter(i => i.status === "open");
+  const jiraResp = await api("GET", `/api/jira/grooming?client=${encodeURIComponent(c.name)}`);
+  const jiraTickets = (jiraResp && jiraResp.configured && jiraResp.tickets) ? jiraResp.tickets : [];
+  const jiraSection = jiraTickets.length
+    ? `<div style="margin-bottom:12px"><strong>Jira tickets (matching "${escapeHtml(c.name)}")</strong><div style="margin-top:6px;max-height:160px;overflow-y:auto">${jiraTickets.map(t => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><a href="${escapeHtml(t.url || "#")}" target="_blank" rel="noopener" class="jira-key" style="margin-right:8px">${escapeHtml(t.key)}</a>${escapeHtml((t.summary || "").slice(0, 60))}${(t.summary || "").length > 60 ? "…" : ""}</div>`).join("")}</div></div>`
+    : "";
   document.getElementById("cd-name").textContent = c.name;
   document.getElementById("cd-content").innerHTML = `
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Projects: ${projects.length} · Open issues: ${openIssues.length}</div>
-    <div style="margin-bottom:12px"><strong>Projects</strong><div style="margin-top:6px">${projects.length ? projects.map(p => `<span class="tag tag-gray" style="margin-right:6px;margin-bottom:6px">${p.name || p.client} · ${p.stage}</span>`).join("") : "—"}</div></div>
-    <div><strong>Open issues</strong><div style="margin-top:6px;max-height:180px;overflow-y:auto">${openIssues.length ? openIssues.map(i => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">${i.title} <span class="tag" style="font-size:10px">${i.category}</span></div>`).join("") : "No open issues"}</div></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Projects: ${projects.length} · Open issues: ${openIssues.length}${jiraTickets.length ? ` · Jira tickets: ${jiraTickets.length}` : ""}</div>
+    <div style="margin-bottom:12px"><strong>Projects</strong><div style="margin-top:6px">${projects.length ? projects.map(p => `<span class="tag tag-gray" style="margin-right:6px;margin-bottom:6px">${escapeHtml(p.name || p.client)} · ${escapeHtml(p.stage || "")}</span>`).join("") : "—"}</div></div>
+    <div style="margin-bottom:12px"><strong>Open issues</strong><div style="margin-top:6px;max-height:120px;overflow-y:auto">${openIssues.length ? openIssues.map(i => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">${escapeHtml(i.title)} <span class="tag" style="font-size:10px">${escapeHtml(i.category || "")}</span></div>`).join("") : "No open issues"}</div></div>
+    ${jiraSection}
   `;
   document.getElementById("client-detail-modal").classList.add("open");
 }
@@ -1618,11 +1676,15 @@ async function loadPipeline() {
 // ── TICKET GROOMING (Jira) ────────────────────────────────────────────────────
 let _groomingTickets = [];
 let _groomingEngineers = [];
+let _groomingClients = [];
+let _groomingClientLinks = {};  // jira_key -> client_id
 
 async function loadGrooming() {
-  const [data, engineers] = await Promise.all([
+  const [data, engineers, clients, links] = await Promise.all([
     api("GET", "/api/jira/grooming"),
     api("GET", "/api/jira/engineers"),
+    api("GET", "/api/clients"),
+    api("GET", "/api/jira/client-links"),
   ]);
   if (!data) return;
   const el = document.getElementById("grooming-list");
@@ -1634,6 +1696,8 @@ async function loadGrooming() {
   }
   _groomingTickets = data.tickets || [];
   _groomingEngineers = Array.isArray(engineers) ? engineers : [];
+  _groomingClients = Array.isArray(clients) ? clients : [];
+  _groomingClientLinks = links && typeof links === "object" ? links : {};
   const statuses = [...new Set(_groomingTickets.map(t => t.status).filter(Boolean))].sort();
   filterEl.innerHTML = `
     <span style="font-size:12px;color:var(--muted);font-weight:600">Status:</span>
@@ -1658,18 +1722,34 @@ function filterGroomingTable() {
   }
   el.innerHTML = `
     <table class="grooming-table">
-      <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Assignee</th><th>Updated</th><th>Action</th></tr></thead>
-      <tbody>${tickets.map(t => `
+      <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Client</th><th>Assignee</th><th>Updated</th><th>Action</th></tr></thead>
+      <tbody>${tickets.map(t => {
+        const selectedId = _groomingClientLinks[t.key] || "";
+        const opts = `<option value="">—</option>${_groomingClients.map(c => `<option value="${c.id}"${c.id == selectedId ? " selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}`;
+        return `
         <tr>
           <td><a href="${t.url}" target="_blank" rel="noopener" class="jira-key">${t.key}</a></td>
           <td class="jira-summary">${t.summary}</td>
           <td><span class="tag tag-gray">${t.status}</span></td>
+          <td><select class="form-select grooming-client-select" style="width:100%;min-width:120px;font-size:12px;padding:6px 8px" data-key="${escapeHtml(t.key)}" onchange="setGroomingTicketClient(this)">${opts}</select></td>
           <td>${t.assignee || "—"}</td>
           <td style="font-size:11px;color:var(--muted);font-family:var(--mono)">${t.updated ? t.updated.slice(0,10) : "—"}</td>
           <td><button type="button" class="btn-sm accent" onclick="openRequestUpdateModal('${(t.key || "").replace(/'/g, "\\'")}')">Request update</button></td>
         </tr>
-      `).join("")}</tbody>
+      `}).join("")}</tbody>
     </table>`;
+}
+
+async function setGroomingTicketClient(selectEl) {
+  const key = selectEl && selectEl.getAttribute("data-key");
+  if (!key) return;
+  const clientId = selectEl.value === "" ? null : selectEl.value;
+  const res = await api("POST", "/api/jira/link-client", { ticket_key: key, client_id: clientId });
+  if (res && res.ok) {
+    _groomingClientLinks[key] = clientId || undefined;
+    if (!clientId) delete _groomingClientLinks[key];
+    showToast(clientId ? "Client linked" : "Client unlinked");
+  } else showToast(res?.error || "Failed to save");
 }
 
 function openRequestUpdateModal(ticketKey) {
@@ -2195,7 +2275,7 @@ document.querySelectorAll(".modal-overlay").forEach(overlay => {
   });
 });
 
-// ── PROJECT DETAIL (updates + status) ─────────────────────────────────────────
+// ── PROJECT DETAIL (updates + status + scope & UAT) ───────────────────────────
 let _currentProjectId = null;
 async function openProjectDetail(pid) {
   const data = await api("GET", `/api/projects/${pid}`);
@@ -2214,6 +2294,10 @@ async function openProjectDetail(pid) {
     ? updates.map(u => `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">${escapeHtml(u.content)}<br><span style="font-size:11px;color:var(--muted)">${u.author_name || "—"} · ${(u.created_at || "").slice(0,16)}</span></div>`).join("")
     : "<div class=\"empty-state\">No updates yet. Post one below.</div>";
   document.getElementById("pd-update-content").value = "";
+  const scopeText = (p.project_scope_content || "").trim();
+  const uatText = (p.uat_signoff_content || "").trim();
+  document.getElementById("pd-scope-preview").textContent = scopeText ? (scopeText.slice(0, 300) + (scopeText.length > 300 ? "…" : "")) : "Not generated yet. Generate with AI or edit to add.";
+  document.getElementById("pd-uat-preview").textContent = uatText ? (uatText.slice(0, 300) + (uatText.length > 300 ? "…" : "")) : "Generate from scope first (requires delivery scope).";
   document.getElementById("project-detail-modal").classList.add("open");
 }
 function escapeHtml(s) {
@@ -2230,6 +2314,122 @@ async function submitProjectUpdate() {
   showToast("Update posted");
   document.getElementById("pd-update-content").value = "";
   openProjectDetail(_currentProjectId);
+}
+
+async function generateProjectScope() {
+  if (!_currentProjectId) return;
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+  const data = await api("POST", `/api/projects/${_currentProjectId}/generate-scope`, {});
+  if (btn) { btn.disabled = false; btn.textContent = "Generate with AI"; }
+  if (data && data.scope) { showToast("Scope generated"); openProjectDetail(_currentProjectId); }
+  else showToast(data?.error || "Failed");
+}
+
+async function generateUatSignoff() {
+  if (!_currentProjectId) return;
+  const btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+  const data = await api("POST", `/api/projects/${_currentProjectId}/generate-uat-signoff`, {});
+  if (btn) { btn.disabled = false; btn.textContent = "Generate from scope"; }
+  if (data && data.uat_signoff) { showToast("UAT signoff generated"); openProjectDetail(_currentProjectId); }
+  else showToast(data?.error || "Failed");
+}
+
+async function downloadProjectPdf(kind) {
+  if (!_currentProjectId) return;
+  const url = `${API}/api/projects/${_currentProjectId}/${kind}.pdf`;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    showToast(j.error || "Failed to download");
+    return;
+  }
+  const blob = await r.blob();
+  const name = r.headers.get("Content-Disposition");
+  let filename = kind === "scope" ? "delivery-scope.pdf" : "uat-signoff.pdf";
+  if (name && name.includes("filename=")) {
+    const m = name.match(/filename="?([^";]+)"?/);
+    if (m) filename = m[1].trim();
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("Download started");
+}
+
+async function openScopeUatEdit(type) {
+  if (!_currentProjectId) return;
+  const isScope = type === "scope";
+  document.getElementById("scope-uat-edit-title").textContent = isScope ? "Edit delivery scope" : "Edit UAT signoff";
+  document.getElementById("scope-uat-edit-type").value = type;
+  const data = await api("GET", `/api/projects/${_currentProjectId}`);
+  const p = data && data.project;
+  const content = p ? (isScope ? (p.project_scope_content || "") : (p.uat_signoff_content || "")) : "";
+  document.getElementById("scope-uat-edit-content").value = content;
+  document.getElementById("scope-uat-edit-modal").classList.add("open");
+}
+async function saveScopeUatEdit() {
+  if (!_currentProjectId) return;
+  const type = document.getElementById("scope-uat-edit-type").value;
+  const content = document.getElementById("scope-uat-edit-content").value;
+  const key = type === "scope" ? "project_scope_content" : "uat_signoff_content";
+  await api("PATCH", `/api/projects/${_currentProjectId}`, { [key]: content });
+  showToast("Saved");
+  closeModal("scope-uat-edit-modal");
+  openProjectDetail(_currentProjectId);
+}
+
+async function loadScopeUat() {
+  const projects = await api("GET", "/api/projects?include_done=true");
+  const list = document.getElementById("scopeuat-list");
+  if (!list) return;
+  const projs = Array.isArray(projects) ? projects : [];
+  list.innerHTML = projs.length
+    ? projs.map(p => {
+        const scopeDate = (p.project_scope_generated_at || "").slice(0, 10);
+        const uatDate = (p.uat_signoff_generated_at || "").slice(0, 10);
+        const hasScope = !!(p.project_scope_content || "").trim();
+        const hasUat = !!(p.uat_signoff_content || "").trim();
+        return `
+          <div style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+            <div style="flex:1;min-width:200px">
+              <div style="font-weight:600">${escapeHtml(p.client)} — ${escapeHtml(p.name || p.client)}</div>
+              <div style="font-size:12px;color:var(--muted)">${p.stage || ""} ${scopeDate ? " · Scope " + scopeDate : ""} ${uatDate ? " · UAT " + uatDate : ""}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" class="btn-sm accent" onclick="openProjectDetail(${p.id})">Open</button>
+              <button type="button" class="btn-sm" onclick="downloadProjectPdfForId(${p.id}, 'scope')" ${!hasScope ? "disabled title=\"Generate scope first\"" : ""}>Scope PDF</button>
+              <button type="button" class="btn-sm" onclick="downloadProjectPdfForId(${p.id}, 'uat-signoff')" ${!hasUat ? "disabled title=\"Generate UAT first\"" : ""}>UAT PDF</button>
+            </div>
+          </div>`;
+      }).join("")
+    : "<div class=\"empty-state\">No projects. Add projects from Pipeline.</div>";
+}
+
+async function downloadProjectPdfForId(pid, kind) {
+  const url = `${API}/api/projects/${pid}/${kind}.pdf`;
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    showToast(j.error || "Failed to download");
+    return;
+  }
+  const blob = await r.blob();
+  let filename = kind === "scope" ? "delivery-scope.pdf" : "uat-signoff.pdf";
+  const disp = r.headers.get("Content-Disposition");
+  if (disp && disp.includes("filename=")) {
+    const m = disp.match(/filename="?([^";]+)"?/);
+    if (m) filename = m[1].trim();
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("Download started");
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────

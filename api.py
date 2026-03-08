@@ -13,7 +13,8 @@ import secrets
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, request, jsonify, send_from_directory
+from io import BytesIO
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,6 +22,7 @@ load_dotenv()
 import database as db
 import ai_client as ai
 import jira_client as jira
+import pdf_export as pdf_export
 
 # frontend/ must sit next to api.py (repo root/frontend/index.html)
 _frontend = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
@@ -178,6 +180,98 @@ def add_update(pid):
     return jsonify({"ok": True}), 201
 
 
+@app.route("/api/projects/<int:pid>/generate-scope", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def generate_project_scope(pid):
+    """Generate delivery/project scope with AI from project + updates + issues; save to project."""
+    project = db.get_project(pid)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    project = dict(project)
+    updates = db.recent_updates(pid, limit=10)
+    issues = db.open_issues(limit=50)
+    project_issues = [dict(i) for i in issues if i.get("project_id") == pid]
+    try:
+        scope = ai.generate_delivery_scope(project, [dict(u) for u in updates], project_issues)
+        now = datetime.utcnow().isoformat()
+        db.update_project(pid, project_scope_content=scope, project_scope_generated_at=now)
+        return jsonify({"scope": scope, "generated_at": now})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/projects/<int:pid>/generate-uat-signoff", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def generate_uat_signoff(pid):
+    """Generate UAT signoff from project's delivery scope; save to project. Requires scope to exist."""
+    project = db.get_project(pid)
+    if not project:
+        return jsonify({"error": "Project not found"}), 404
+    project = dict(project)
+    scope = (project.get("project_scope_content") or "").strip()
+    if not scope:
+        return jsonify({"error": "Generate or enter Delivery Scope first; UAT signoff is derived from it."}), 400
+    try:
+        uat = ai.generate_uat_signoff_from_scope(
+            scope, project.get("name") or "Project", project.get("client") or "Client"
+        )
+        now = datetime.utcnow().isoformat()
+        db.update_project(pid, uat_signoff_content=uat, uat_signoff_generated_at=now)
+        return jsonify({"uat_signoff": uat, "generated_at": now})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/projects/<int:pid>/scope.pdf", methods=["GET"])
+@_require_auth()
+def download_scope_pdf(pid):
+    """Download delivery scope as PDF (on request)."""
+    project = db.get_project(pid)
+    if not project:
+        return jsonify({"error": "Not found"}), 404
+    project = dict(project)
+    content = (project.get("project_scope_content") or "").strip()
+    if not content:
+        return jsonify({"error": "No delivery scope. Generate or enter scope first."}), 404
+    safe_name = "".join(c for c in (project.get("client") or "Project") if c.isalnum() or c in " -_")[:40]
+    filename = f"delivery-scope-{safe_name}.pdf"
+    try:
+        pdf_bytes = pdf_export.delivery_scope_pdf(project, content)
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/projects/<int:pid>/uat-signoff.pdf", methods=["GET"])
+@_require_auth()
+def download_uat_signoff_pdf(pid):
+    """Download UAT signoff as PDF (on request)."""
+    project = db.get_project(pid)
+    if not project:
+        return jsonify({"error": "Not found"}), 404
+    project = dict(project)
+    content = (project.get("uat_signoff_content") or "").strip()
+    if not content:
+        return jsonify({"error": "No UAT signoff. Generate from scope first."}), 404
+    safe_name = "".join(c for c in (project.get("client") or "Project") if c.isalnum() or c in " -_")[:40]
+    filename = f"uat-signoff-{safe_name}.pdf"
+    try:
+        pdf_bytes = pdf_export.uat_signoff_pdf(project, content)
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── CLIENTS ───────────────────────────────────────────────────────────────────
 
 @app.route("/api/clients", methods=["GET"])
@@ -316,9 +410,41 @@ def create_reflection():
 @app.route("/api/jira/grooming", methods=["GET"])
 @_require_auth()
 def jira_grooming():
-    """All open Jira tickets for ticket-grooming view (delegation/assignment)."""
+    """All open Jira tickets for ticket-grooming view. Optional ?client=Name filters to tickets whose summary contains the client name."""
     tickets = jira.get_grooming_tickets()
+    client_filter = (request.args.get("client") or "").strip()
+    if client_filter:
+        client_lower = client_filter.lower()
+        tickets = [t for t in tickets if client_lower in (t.get("summary") or "").lower()]
     return jsonify({"configured": jira.is_configured(), "tickets": tickets})
+
+
+@app.route("/api/jira/client-links", methods=["GET"])
+@_require_auth()
+def jira_client_links():
+    """Jira ticket key → client_id for grooming view client dropdown."""
+    links = db.get_jira_ticket_client_links()
+    return jsonify(links)
+
+
+@app.route("/api/jira/link-client", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def jira_link_client():
+    """Link a Jira ticket to a client (or unlink if client_id is null). Body: ticket_key, client_id (int or null)."""
+    data = request.json or {}
+    ticket_key = (data.get("ticket_key") or "").strip()
+    client_id = data.get("client_id")
+    if not ticket_key:
+        return jsonify({"error": "ticket_key required"}), 400
+    if client_id is not None:
+        try:
+            client_id = int(client_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "client_id must be an integer or null"}), 400
+        if db.get_client(client_id) is None:
+            return jsonify({"error": "Client not found"}), 404
+    db.set_jira_ticket_client(ticket_key, client_id)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/jira/engineers", methods=["GET"])

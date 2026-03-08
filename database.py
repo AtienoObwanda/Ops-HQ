@@ -85,6 +85,17 @@ def init_db():
                 conn.execute(f"ALTER TABLE projects ADD COLUMN {col} {typ}")
             except sqlite3.OperationalError:
                 pass
+        # Migration: delivery scope & UAT signoff (for completed projects, on request)
+        for col, typ in [
+            ("project_scope_content", "TEXT"),
+            ("project_scope_generated_at", "TEXT"),
+            ("uat_signoff_content", "TEXT"),
+            ("uat_signoff_generated_at", "TEXT"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE projects ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError:
+                pass
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS eisenhower_tasks (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,6 +124,12 @@ def init_db():
             conn.execute("ALTER TABLE issues ADD COLUMN client_id INTEGER REFERENCES clients(id)")
         except sqlite3.OperationalError:
             pass
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS jira_ticket_client (
+                jira_key   TEXT PRIMARY KEY,
+                client_id  INTEGER NOT NULL REFERENCES clients(id)
+            );
+        """)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS product_escalations (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,7 +229,26 @@ def delete_client(client_id):
     with get_conn() as conn:
         conn.execute("UPDATE projects SET client_id = NULL WHERE client_id = ?", (client_id,))
         conn.execute("UPDATE issues SET client_id = NULL WHERE client_id = ?", (client_id,))
+        conn.execute("DELETE FROM jira_ticket_client WHERE client_id = ?", (client_id,))
         conn.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+
+
+def get_jira_ticket_client_links():
+    """Return dict jira_key -> client_id for all linked tickets."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT jira_key, client_id FROM jira_ticket_client").fetchall()
+        return {r["jira_key"]: r["client_id"] for r in rows}
+
+
+def set_jira_ticket_client(jira_key, client_id):
+    """Link a Jira ticket to a client. client_id must be valid. Replaces any existing link for this key."""
+    jira_key = (jira_key or "").strip().upper()
+    if not jira_key:
+        return
+    with get_conn() as conn:
+        conn.execute("DELETE FROM jira_ticket_client WHERE jira_key = ?", (jira_key,))
+        if client_id is not None:
+            conn.execute("INSERT INTO jira_ticket_client (jira_key, client_id) VALUES (?, ?)", (jira_key, int(client_id)))
 
 
 def get_projects_for_client(client_id):
@@ -306,8 +342,16 @@ def at_risk_projects():
 
 
 def update_project(project_id, **kwargs):
-    allowed = {"stage", "health", "notes", "owner_slack", "owner_name", "recon_slack", "recon_name", "go_live", "name", "client", "client_id"}
-    updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+    allowed = {
+        "stage", "health", "notes", "owner_slack", "owner_name", "recon_slack", "recon_name",
+        "go_live", "name", "client", "client_id",
+        "project_scope_content", "project_scope_generated_at", "uat_signoff_content", "uat_signoff_generated_at",
+    }
+    # Allow empty string for scope/uat content so they can be cleared
+    updates = {
+        k: v for k, v in kwargs.items()
+        if k in allowed and (v is not None or k in ("project_scope_content", "uat_signoff_content"))
+    }
     if not updates:
         return
     updates["updated_at"] = datetime.utcnow().isoformat()

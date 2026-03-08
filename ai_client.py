@@ -277,6 +277,73 @@ Keep it under 500 words. Write in plain English, no jargon. This is for internal
     return _call(system, "\n".join(user_parts), max_tokens=1200)
 
 
+# ── DELIVERY / PROJECT SCOPE (for completed projects, before assignment) ───────
+
+def generate_delivery_scope(project, recent_updates, open_issues):
+    """
+    Draft a delivery scope / project scope document for a project (for handoff, before assignment).
+    Used before UAT signoff; UAT signoff is then derived from this scope.
+    """
+    system = """You are a delivery manager writing a formal Delivery Scope / Project Scope document for a completed or near-complete implementation project.
+This document defines what was delivered and is in scope for handoff and UAT signoff. Be clear and specific.
+Structure:
+1. Project summary (client, project name, stage, go-live if any)
+2. Scope of delivery (numbered or bullet list of what was delivered / in scope)
+3. Out of scope (if any)
+4. Dependencies / prerequisites (if relevant)
+5. Acceptance criteria (what constitutes successful delivery)
+Keep it under 400 words. Plain English. This will be used to generate a UAT signoff document."""
+
+    updates_text = "\n".join([f"- {u.get('content', '')} ({(u.get('created_at') or '')[:10]})" for u in recent_updates]) or "No updates logged."
+    issues_text = "\n".join([f"- [{i.get('category', '')}] {i.get('title', '')}" for i in open_issues]) or "No open issues."
+
+    user = f"""Project:
+Client: {project.get('client', '')}
+Name: {project.get('name', '')}
+Stage: {project.get('stage', '')}
+Health: {project.get('health', '')}
+Go-Live: {project.get('go_live') or 'TBD'}
+Notes: {project.get('notes') or 'None'}
+
+Recent updates:
+{updates_text}
+
+Open issues (for context):
+{issues_text}
+
+Write the Delivery Scope / Project Scope document now."""
+
+    return _call(system, user, max_tokens=800)
+
+
+def generate_uat_signoff_from_scope(scope_text, project_name, client_name):
+    """
+    Generate a UAT signoff document from an existing project/delivery scope.
+    Output: signoff-ready document with scope summary and sign-off lines for client/stakeholder.
+    """
+    system = """You are a delivery manager creating a UAT (User Acceptance Testing) signoff document.
+You are given a Delivery/Project Scope. Turn it into a formal UAT signoff document that:
+1. Has a title: "UAT Sign-off" and project/client names
+2. Briefly restates the scope (summary bullets derived from the scope)
+3. Includes a clear "Sign-off" section with:
+   - Statement that the client/stakeholder has reviewed and accepts the delivered scope
+   - Line for Name, Role, Date, Signature (or "Signed by" for electronic signoff)
+4. Optional: space for comments/conditions
+Keep it professional and under 350 words. The scope items should be traceable to the original scope so the client knows what they are signing off on."""
+
+    user = f"""Project: {project_name}
+Client: {client_name}
+
+Delivery / Project Scope (use this to derive the signoff content):
+---
+{scope_text or 'No scope provided.'}
+---
+
+Generate the UAT signoff document now."""
+
+    return _call(system, user, max_tokens=600)
+
+
 # ── ON-DEMAND ASK (any info from cockpit) ─────────────────────────────────────
 
 def answer_cockpit_prompt(user_prompt, context_text):
