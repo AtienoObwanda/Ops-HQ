@@ -48,3 +48,8 @@ def uat_signoff_pdf(project, signoff_content):
     """Return PDF bytes for a project's UAT signoff."""
     title = f"UAT Sign-off — {project.get('client', '')} / {project.get('name', 'Project')}"
     return _pdf_from_text(title, signoff_content)
+
+
+def generic_pdf(title, body):
+    """Return PDF bytes for any document (e.g. AI-generated)."""
+    return _pdf_from_text(title or "Document", body)

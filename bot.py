@@ -329,11 +329,17 @@ def handle_jira(ack, respond):
 @app.command("/brief")
 def handle_brief(ack, respond):
     ack()
-    stale        = db.stale_projects(hours=24)
-    at_risk      = db.at_risk_projects()
-    all_projects = db.all_projects()
-    jira_data    = jira.get_jira_brief_data()
-    respond(text="Morning Brief", blocks=msg.morning_brief(stale, at_risk, all_projects, jira_data=jira_data))
+    d = _get_morning_brief_data()
+    respond(
+        text="Morning Brief",
+        blocks=msg.morning_brief(
+            d["stale"], d["at_risk"], d["all_projects"], jira_data=d["jira_data"],
+            all_with_done=d["all_with_done"], by_client=d["by_client"],
+            go_live_this_week=d["go_live_this_week"], go_live_overdue=d["go_live_overdue"],
+            recently_completed=d["recently_completed"], open_issues=d["open_issues"],
+            pending_do_first=d["pending_do_first"],
+        ),
+    )
 
 
 # ── /report ───────────────────────────────────────────────────────────────────
@@ -420,14 +426,67 @@ def handle_checkin_button(ack, body, action, respond):
 
 # ── SCHEDULED JOBS ────────────────────────────────────────────────────────────
 
+def _get_morning_brief_data():
+    """Shared data for morning brief (scheduled and /brief command)."""
+    stale = db.stale_projects(hours=24)
+    at_risk = db.at_risk_projects()
+    all_projects = db.all_projects()
+    all_with_done = db.all_projects(exclude_done=False)
+    jira_data = jira.get_jira_brief_data()
+    go_live_week = db.projects_go_live_this_week()
+    go_live_overdue = db.projects_go_live_overdue()
+    recently_completed = db.recently_completed_projects(days=14)
+    open_issues = db.open_issues(limit=15)
+    clients = db.all_clients()
+    at_risk_ids = {p["id"] for p in at_risk}
+    stale_ids = {p["id"] for p in stale}
+    by_client = []
+    for c in clients:
+        projs = [p for p in all_with_done if p.get("client_id") == c["id"] or (p.get("client") or "").strip() == c["name"]]
+        active = [p for p in projs if p.get("stage") != "Done"]
+        issues_c = sum(1 for i in open_issues if (i.get("client") or "").strip() == c["name"])
+        by_client.append({
+            "client_name": c["name"],
+            "project_count": len(active),
+            "at_risk_count": sum(1 for p in active if p["id"] in at_risk_ids),
+            "stale_count": sum(1 for p in active if p["id"] in stale_ids),
+            "open_issues": issues_c,
+        })
+    pending = []
+    for p in at_risk:
+        pending.append({"type": "at_risk", "label": f"At risk: {p['client']} — {p['stage']}"})
+    for p in stale:
+        pending.append({"type": "stale", "label": f"Stale: {p['client']} — {p.get('owner_name') or '—'}"})
+    for p in go_live_overdue:
+        pending.append({"type": "overdue", "label": f"Go-live overdue: {p['client']} (was {p.get('go_live')})"})
+    for t in (jira_data.get("blocked") or [])[:5]:
+        pending.append({"type": "jira_blocked", "label": f"Jira blocked: {t.get('key')} — {(t.get('summary') or '')[:40]}"})
+    return {
+        "stale": [dict(p) for p in stale],
+        "at_risk": [dict(p) for p in at_risk],
+        "all_projects": [dict(p) for p in all_projects],
+        "all_with_done": [dict(p) for p in all_with_done],
+        "jira_data": jira_data,
+        "by_client": by_client,
+        "go_live_this_week": [dict(p) for p in go_live_week],
+        "go_live_overdue": [dict(p) for p in go_live_overdue],
+        "recently_completed": [dict(p) for p in recently_completed],
+        "open_issues": [dict(i) for i in open_issues],
+        "pending_do_first": pending[:15],
+    }
+
+
 def send_morning_brief():
     if not COMMAND_CHANNEL:
         return
-    stale        = db.stale_projects(hours=24)
-    at_risk      = db.at_risk_projects()
-    all_projects = db.all_projects()
-    jira_data    = jira.get_jira_brief_data()
-    blocks       = msg.morning_brief(stale, at_risk, all_projects, jira_data=jira_data)
+    d = _get_morning_brief_data()
+    blocks = msg.morning_brief(
+        d["stale"], d["at_risk"], d["all_projects"], jira_data=d["jira_data"],
+        all_with_done=d["all_with_done"], by_client=d["by_client"],
+        go_live_this_week=d["go_live_this_week"], go_live_overdue=d["go_live_overdue"],
+        recently_completed=d["recently_completed"], open_issues=d["open_issues"],
+        pending_do_first=d["pending_do_first"],
+    )
     _post_blocks(COMMAND_CHANNEL, blocks, text="☀️ CS Morning Brief")
     print(f"✅ Morning brief posted")
 

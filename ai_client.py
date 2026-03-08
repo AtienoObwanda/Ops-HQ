@@ -246,6 +246,38 @@ Generate my talking points for this meeting."""
 
 # ── PRODUCT SCOPE (escalation to product: draft scope from tickets, future, drive) ─
 
+def generate_product_scope_from_tickets_only(tickets_text):
+    """
+    From Jira tickets only: AI suggests an escalation title and drafts the full product scope.
+    Returns a single text block: first line 'TITLE: <suggested title>', then blank line, then scope document.
+    """
+    system = """You are a senior delivery/ops lead drafting a product scope for an escalation to the Product team.
+You will be given Jira ticket details only. Do two things:
+1. Suggest a short escalation title (e.g. "Kuda Bill Payment – Glo reporting and recon") based on the tickets.
+2. Write a full product scope document.
+
+Your response MUST start with exactly:
+TITLE: <your suggested title here>
+
+Then a blank line, then the product scope with this structure:
+- Summary (2–3 sentences: what we're asking for and why)
+- Background / context (from the tickets)
+- Proposed scope (clear bullets; what should be in scope)
+- Out of scope (if relevant)
+- Success criteria / acceptance
+- References (ticket keys)
+
+Keep the scope under 400 words. Plain English. For internal Product consumption."""
+
+    user = f"""JIRA TICKETS:
+
+{tickets_text or 'No tickets provided.'}
+
+Output the TITLE line first, then the product scope document."""
+
+    return _call(system, user, max_tokens=1200)
+
+
 def generate_product_scope(title, description, tickets_text, future_notes, drive_content):
     """
     Draft a product scope document for an escalation to product.
@@ -367,3 +399,104 @@ USER QUESTION:
 Answer based on the data above."""
 
     return _call(system, user, max_tokens=1000)
+
+
+# ── AI DOCUMENTS (industry-standard templates, tickets and/or context) ─────────
+
+DOCUMENT_TEMPLATES = {
+    "product_scope": {
+        "name": "Product scope / Escalation",
+        "description": "Summary, background, proposed scope, OOS, success criteria, references.",
+        "system": """You are a senior delivery/ops lead drafting a product scope for the Product team.
+Use ONLY the context provided (Jira tickets and/or pasted context). Output a clear, structured document.
+Structure: 1) Summary (2–3 sentences). 2) Background/context. 3) Proposed scope (bullets). 4) Out of scope. 5) Success criteria. 6) References.
+Under 500 words. Plain English. Industry-standard product scope.""",
+    },
+    "prd": {
+        "name": "PRD (Product Requirements Document)",
+        "description": "Overview, goals, user stories, acceptance criteria, OOS, dependencies.",
+        "system": """You are a product manager writing a Product Requirements Document (PRD).
+Use ONLY the context provided. Follow industry-standard PRD structure:
+1. Overview & problem statement
+2. Goals and success metrics
+3. User personas (if applicable)
+4. User stories / requirements (clear, testable)
+5. Acceptance criteria
+6. Out of scope
+7. Dependencies and assumptions
+8. Timeline / phases (if known)
+Under 600 words. Clear, actionable, stakeholder-ready.""",
+    },
+    "technical_spec": {
+        "name": "Technical specification",
+        "description": "Overview, architecture, data/API, security, NFRs, risks.",
+        "system": """You are a technical lead writing a Technical Specification.
+Use ONLY the context provided. Follow industry-standard tech spec structure:
+1. Overview and objectives
+2. Architecture / approach
+3. Data model or API (key points)
+4. Security and compliance considerations
+5. Non-functional requirements (performance, availability)
+6. Risks and mitigations
+Under 550 words. Precise, implementable.""",
+    },
+    "uat_signoff": {
+        "name": "UAT signoff",
+        "description": "Formal UAT sign-off with scope summary and sign-off block.",
+        "system": """You are a delivery manager creating a UAT (User Acceptance Testing) signoff document.
+Use ONLY the context provided. Output a formal signoff:
+1. Document title and project/client name
+2. Scope summary (bullets of what is being accepted)
+3. Sign-off section: statement of acceptance, lines for Name, Role, Date, Signature
+4. Optional: comments/conditions
+Under 350 words. Professional, legally-sound style.""",
+    },
+    "project_charter": {
+        "name": "Project charter",
+        "description": "Objectives, scope, deliverables, assumptions, success criteria.",
+        "system": """You are a project manager writing a Project Charter.
+Use ONLY the context provided. Follow PMI-style project charter structure:
+1. Project name and sponsor
+2. Business case / objectives
+3. Scope (in and out)
+4. Key deliverables
+5. Assumptions and constraints
+6. High-level timeline
+7. Success criteria
+Under 500 words. Authoritative, approval-ready.""",
+    },
+    "meeting_notes": {
+        "name": "Meeting notes / Decision log",
+        "description": "Decisions, action items, next steps.",
+        "system": """You are an operations lead writing meeting notes / decision log.
+Use ONLY the context provided. Structure:
+1. Date and (if known) attendees
+2. Key decisions made
+3. Action items (owner + deliverable)
+4. Next steps and follow-up date
+Under 400 words. Clear ownership and deadlines.""",
+    },
+}
+
+
+def generate_document_from_template(template_id, tickets_text, context):
+    """
+    Generate a document from an industry-standard template. Purely AI.
+    template_id: key in DOCUMENT_TEMPLATES
+    tickets_text: optional text from Jira tickets
+    context: optional free-form context (user paste, no ticket)
+    If no tickets and no context, AI will still try to produce a draft from minimal prompt.
+    """
+    template = DOCUMENT_TEMPLATES.get(template_id)
+    if not template:
+        raise ValueError(f"Unknown template: {template_id}")
+    system = template["system"]
+    parts = []
+    if tickets_text and tickets_text.strip():
+        parts.append("--- JIRA TICKETS ---\n" + tickets_text.strip())
+    if context and context.strip():
+        parts.append("--- ADDITIONAL CONTEXT (user-provided) ---\n" + context.strip())
+    if not parts:
+        parts.append("--- CONTEXT ---\nNo tickets or context provided. Generate a concise placeholder document following the template structure so the user can replace with real content.")
+    user = "\n\n".join(parts) + "\n\nGenerate the document now."
+    return _call(system, user, max_tokens=1200)

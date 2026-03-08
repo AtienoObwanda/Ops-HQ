@@ -349,20 +349,79 @@ def client_report(cid):
 
 # ── BRIEF ─────────────────────────────────────────────────────────────────────
 
+def _brief_by_client(all_projects, at_risk, stale, open_issues_list):
+    """Build per-client summary for the brief (client lens)."""
+    clients = db.all_clients()
+    at_risk_ids = {p["id"] for p in at_risk}
+    stale_ids = {p["id"] for p in stale}
+    issues_by_client_name = {}
+    for i in open_issues_list:
+        cname = (i.get("client") or "").strip() or "—"
+        issues_by_client_name[cname] = issues_by_client_name.get(cname, 0) + 1
+    by_client = []
+    for c in clients:
+        cid, cname = c["id"], c["name"]
+        projects_c = [p for p in all_projects if p.get("client_id") == cid or (p.get("client") or "").strip() == cname]
+        active_c = [p for p in projects_c if p.get("stage") != "Done"]
+        by_client.append({
+            "client_id": cid,
+            "client_name": cname,
+            "project_count": len(active_c),
+            "at_risk_count": sum(1 for p in active_c if p["id"] in at_risk_ids),
+            "stale_count": sum(1 for p in active_c if p["id"] in stale_ids),
+            "open_issues": issues_by_client_name.get(cname, 0),
+        })
+    return by_client
+
+
 @app.route("/api/brief", methods=["GET"])
 @_require_auth()
 def get_brief():
     stale        = db.stale_projects(hours=24)
     at_risk      = db.at_risk_projects()
-    all_projects = db.all_projects()
+    all_projects = db.all_projects()  # active only (exclude_done=True)
+    all_projects_with_done = db.all_projects(exclude_done=False)  # for Completed count + by_client
     jira_data    = jira.get_jira_brief_data()
     by_stage     = db.projects_by_stage()
+    go_live_week = db.projects_go_live_this_week()
+    go_live_overdue = db.projects_go_live_overdue()
+    recently_completed = db.recently_completed_projects(days=14)
+    open_issues_list = db.open_issues(limit=50)
+    at_risk_list = [dict(p) for p in at_risk]
+    stale_list = [dict(p) for p in stale]
+    by_client = _brief_by_client(
+        [dict(p) for p in all_projects_with_done],
+        at_risk_list,
+        stale_list,
+        [dict(i) for i in open_issues_list],
+    )
+    # Pending / do first: at risk + stale + overdue go-live + blocked Jira (combined priority list)
+    overdue_ids = {p["id"] for p in go_live_overdue}
+    pending = []
+    for p in at_risk_list:
+        pending.append({"type": "at_risk", "project": p, "label": f"At risk: {p.get('client')} — {p.get('stage')}"})
+    for p in stale_list:
+        if p["id"] not in {x["project"]["id"] for x in pending}:
+            pending.append({"type": "stale", "project": p, "label": f"Stale: {p.get('client')} — {p.get('owner_name') or '—'}"})
+    for p in go_live_overdue:
+        p = dict(p)
+        pending.append({"type": "overdue", "project": p, "label": f"Go-live overdue: {p.get('client')} (was {p.get('go_live')})"})
+    if jira_data.get("configured"):
+        for t in jira_data.get("blocked", [])[:5]:
+            pending.append({"type": "jira_blocked", "ticket": t, "label": f"Jira blocked: {t.get('key')} — {t.get('summary', '')[:50]}"})
 
     return jsonify({
-        "stale":       [dict(p) for p in stale],
-        "at_risk":     [dict(p) for p in at_risk],
+        "stale":       stale_list,
+        "at_risk":     at_risk_list,
         "all_projects": [dict(p) for p in all_projects],
+        "all_projects_with_done": [dict(p) for p in all_projects_with_done],
         "by_stage":    [dict(r) for r in by_stage],
+        "by_client":   by_client,
+        "go_live_this_week": [dict(p) for p in go_live_week],
+        "go_live_overdue": [dict(p) for p in go_live_overdue],
+        "recently_completed": [dict(p) for p in recently_completed],
+        "open_issues": [dict(i) for i in open_issues_list],
+        "pending_do_first": pending[:20],
         "jira":        {
             "configured": jira_data.get("configured", False),
             "stale":   jira_data.get("stale", []),
@@ -756,6 +815,7 @@ def create_escalation():
         future_notes=data.get("future_notes"),
         drive_links=data.get("drive_links"),
         drive_notes=data.get("drive_notes"),
+        drafted_scope=data.get("drafted_scope"),
     )
     return jsonify({"id": eid}), 201
 
@@ -791,6 +851,36 @@ def update_escalation(eid):
 def delete_escalation(eid):
     db.delete_product_escalation(eid)
     return jsonify({"ok": True})
+
+
+@app.route("/api/ai/product-scope/from-tickets", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def ai_product_scope_from_tickets():
+    """
+    Select tickets only: AI suggests title and drafts full product scope. No form needed.
+    Body: { "jira_keys": ["NAO-831", "NAO-830"] }. Returns { "title", "draft", "jira_keys" }.
+    """
+    data = request.json or {}
+    keys_raw = data.get("jira_keys") or []
+    jira_keys = keys_raw if isinstance(keys_raw, list) else [k.strip() for k in str(keys_raw).replace(",", " ").split() if k.strip()]
+    if not jira_keys:
+        return jsonify({"error": "jira_keys required (list of ticket keys)"}), 400
+    tickets = jira.get_tickets_by_keys(jira_keys)
+    tickets_text = "\n\n".join(
+        f"[{t.get('key')}] {t.get('summary')}\nStatus: {t.get('status')}\n{t.get('description', '')}"
+        for t in tickets
+    ) if tickets else "No ticket details found (check Jira config and keys)."
+    try:
+        raw = ai.generate_product_scope_from_tickets_only(tickets_text)
+        title = ""
+        draft = raw
+        if raw.strip().upper().startswith("TITLE:"):
+            first_line, _, rest = raw.strip().partition("\n")
+            title = first_line[6:].strip()  # after "TITLE:"
+            draft = rest.strip()
+        return jsonify({"title": title or "Product escalation", "draft": draft, "jira_keys": jira_keys})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/ai/product-scope", methods=["POST"])

@@ -341,6 +341,42 @@ def at_risk_projects():
         ).fetchall()
 
 
+def projects_go_live_this_week():
+    """Projects with go_live date in the next 7 days (including today)."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT * FROM projects
+               WHERE go_live IS NOT NULL AND go_live != ''
+               AND date(go_live) BETWEEN date('now') AND date('now', '+7 days')
+               AND stage != 'Done'
+               ORDER BY go_live ASC"""
+        ).fetchall()
+
+
+def projects_go_live_overdue():
+    """Projects with go_live in the past and not yet Done."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT * FROM projects
+               WHERE go_live IS NOT NULL AND go_live != ''
+               AND date(go_live) < date('now')
+               AND stage != 'Done'
+               ORDER BY go_live ASC"""
+        ).fetchall()
+
+
+def recently_completed_projects(days=14):
+    """Projects moved to Done in the last N days (for handoff / UAT)."""
+    with get_conn() as conn:
+        since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        return conn.execute(
+            """SELECT * FROM projects
+               WHERE stage = 'Done' AND date(updated_at) >= ?
+               ORDER BY updated_at DESC""",
+            (since,),
+        ).fetchall()
+
+
 def update_project(project_id, **kwargs):
     allowed = {
         "stage", "health", "notes", "owner_slack", "owner_name", "recon_slack", "recon_name",
@@ -460,12 +496,12 @@ def record_checkin_reply(checkin_id, response):
 
 # ── PRODUCT ESCALATIONS (escalation to product, draft scopes from tickets/future/drive) ─
 
-def add_product_escalation(title, description=None, jira_keys=None, future_notes=None, drive_links=None, drive_notes=None):
+def add_product_escalation(title, description=None, jira_keys=None, future_notes=None, drive_links=None, drive_notes=None, drafted_scope=None):
     keys_str = ",".join([k.strip() for k in (jira_keys or []) if k and k.strip()]) if isinstance(jira_keys, list) else (jira_keys or "")
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO product_escalations (title, description, jira_keys, future_notes, drive_links, drive_notes)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO product_escalations (title, description, jira_keys, future_notes, drive_links, drive_notes, drafted_scope)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 (title or "").strip(),
                 (description or "").strip() or None,
@@ -473,6 +509,7 @@ def add_product_escalation(title, description=None, jira_keys=None, future_notes
                 (future_notes or "").strip() or None,
                 (drive_links or "").strip() or None,
                 (drive_notes or "").strip() or None,
+                (drafted_scope or "").strip() or None,
             ),
         )
         return cur.lastrowid

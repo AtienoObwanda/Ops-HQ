@@ -774,6 +774,10 @@
         <button class="btn-sm accent" onclick="loadBrief()">↻ Refresh</button>
       </div>
       <div class="metrics" id="brief-metrics"></div>
+      <div class="card" id="brief-pending-card">
+        <div class="card-title">🎯 Pending / Do first</div>
+        <div id="brief-pending"></div>
+      </div>
       <div class="grid-2">
         <div>
           <div class="card" id="brief-atrisk-card">
@@ -784,8 +788,24 @@
             <div class="card-title">⏰ Stale — No Update 24h+</div>
             <div id="brief-stale"></div>
           </div>
+          <div class="card">
+            <div class="card-title">📅 Go-live this week</div>
+            <div id="brief-golive-week"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">✅ Recently completed (ready for handoff / UAT)</div>
+            <div id="brief-completed"></div>
+          </div>
         </div>
         <div>
+          <div class="card">
+            <div class="card-title">🏢 By client</div>
+            <div id="brief-by-client"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">🐛 Open issues</div>
+            <div id="brief-open-issues"></div>
+          </div>
           <div class="card">
             <div class="card-title">🔧 Jira — Flagged</div>
             <div id="brief-jira"></div>
@@ -947,9 +967,15 @@
       <div class="page-header">
         <div>
           <div class="page-title">Escalation to Product</div>
-          <div class="page-sub">Track escalations and draft product scopes from Jira tickets, future/backlog notes, and Google Drive context</div>
+          <div class="page-sub">Select tickets → AI drafts title and product scope. Save to track.</div>
         </div>
-        <button class="btn-sm accent" onclick="openAddEscalation()">+ New escalation</button>
+        <button class="btn-sm" onclick="openAddEscalation()">+ Manual escalation</button>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">✨ Draft with AI — select tickets</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Pick one or more Jira tickets; AI will suggest a title and draft the full product scope.</p>
+        <div id="escalation-ticket-picker" style="max-height:200px;overflow-y:auto;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px"></div>
+        <button type="button" class="btn-accent" id="escalation-ai-btn" onclick="generateEscalationFromTickets()">Generate product scope with AI</button>
       </div>
       <div class="card">
         <div class="card-title">Product escalation items</div>
@@ -1343,10 +1369,12 @@
 <!-- SCOPE DRAFT MODAL -->
 <div class="modal-overlay" id="scope-draft-modal">
   <div class="modal" style="max-width:640px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column">
-    <div class="modal-title">Product scope draft</div>
+    <div class="modal-title" id="scope-draft-modal-title">Product scope draft</div>
+    <div id="scope-draft-title-block" style="display:none;font-weight:600;margin-bottom:8px;font-size:14px"></div>
     <div class="ai-output" id="scope-draft-content" style="flex:1;overflow:auto;white-space:pre-wrap;margin:0 0 12px 0"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('scope-draft-modal')">Close</button>
+      <button class="btn-accent" id="scope-draft-save-btn" style="display:none" onclick="saveEscalationFromDraft()">Save as escalation</button>
     </div>
   </div>
 </div>
@@ -1460,14 +1488,15 @@ async function loadBrief() {
   document.getElementById("brief-time").textContent =
     `Generated ${new Date(data.generated_at + "Z").toLocaleString()}`;
 
-  // Metrics
+  // Metrics (use all_projects_with_done so Completed count is correct)
+  const allWithDone = data.all_projects_with_done || data.all_projects || [];
+  const active = allWithDone.filter(p => p.stage !== "Done").length;
+  const doneCount = allWithDone.filter(p => p.stage === "Done").length;
   const ar  = data.at_risk.length;
   const st  = data.stale.length;
-  const all = data.all_projects.length;
-  const done = data.all_projects.filter(p => p.stage === "Done").length;
   document.getElementById("brief-metrics").innerHTML = `
     <div class="metric-card green">
-      <div class="metric-num">${all}</div>
+      <div class="metric-num">${active}</div>
       <div class="metric-label">Active Projects</div>
     </div>
     <div class="metric-card ${ar > 0 ? 'danger' : 'green'}">
@@ -1479,10 +1508,21 @@ async function loadBrief() {
       <div class="metric-label">Stale 24h+</div>
     </div>
     <div class="metric-card purple">
-      <div class="metric-num">${done}</div>
+      <div class="metric-num">${doneCount}</div>
       <div class="metric-label">Completed</div>
     </div>
   `;
+
+  // Pending / do first
+  const pending = data.pending_do_first || [];
+  document.getElementById("brief-pending").innerHTML = pending.length
+    ? pending.map(item => `
+        <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)">
+          <span class="tag tag-${item.type === 'at_risk' ? 'danger' : item.type === 'overdue' ? 'warn' : item.type === 'jira_blocked' ? 'danger' : 'warn'}" style="font-size:10px;margin-right:8px">${item.type.replace(/_/g, ' ')}</span>
+          <span style="font-size:13px">${escapeHtml(item.label)}</span>
+        </div>
+      `).join("")
+    : `<div class="empty-state">Nothing pending ✅</div>`;
 
   // At risk
   const arEl = document.getElementById("brief-atrisk");
@@ -1490,7 +1530,7 @@ async function loadBrief() {
     ? data.at_risk.map(p => `
         <div class="project-row" onclick="nav('pipeline')">
           <span class="health-dot dot-${p.health==='Blocked'?'danger':'warn'}"></span>
-          <span class="project-client">${p.client}</span>
+          <span class="project-client">${escapeHtml(p.client)}</span>
           <span class="project-stage">${p.stage}</span>
           <span class="tag tag-${p.health==='Blocked'?'danger':'warn'}">${p.health}</span>
         </div>
@@ -1502,12 +1542,59 @@ async function loadBrief() {
     ? data.stale.map(p => `
         <div class="project-row">
           <span class="health-dot dot-warn"></span>
-          <span class="project-client">${p.client}</span>
+          <span class="project-client">${escapeHtml(p.client)}</span>
           <span class="project-owner">${p.owner_name || "—"}</span>
           <span class="tag tag-warn">stale</span>
         </div>
       `).join("")
     : `<div class="empty-state">No stale projects ✅</div>`;
+
+  // Go-live this week
+  const goLiveWeek = data.go_live_this_week || [];
+  document.getElementById("brief-golive-week").innerHTML = goLiveWeek.length
+    ? goLiveWeek.map(p => `
+        <div class="project-row" onclick="nav('pipeline')">
+          <span class="project-client">${escapeHtml(p.client)}</span>
+          <span style="font-size:12px;color:var(--muted)">${p.go_live || ""}</span>
+          <span class="tag tag-gray">${p.stage || ""}</span>
+        </div>
+      `).join("")
+    : `<div class="empty-state">None this week</div>`;
+
+  // Recently completed (ready for handoff / UAT)
+  const completed = data.recently_completed || [];
+  document.getElementById("brief-completed").innerHTML = completed.length
+    ? completed.map(p => `
+        <div class="project-row" onclick="nav('scopeuat')">
+          <span class="project-client">${escapeHtml(p.client)}</span>
+          <span style="font-size:11px;color:var(--muted)">${(p.updated_at || "").slice(0,10)}</span>
+        </div>
+      `).join("")
+    : `<div class="empty-state">None in last 14 days</div>`;
+
+  // By client
+  const byClient = data.by_client || [];
+  document.getElementById("brief-by-client").innerHTML = byClient.length
+    ? byClient.map(c => {
+        const hasAttention = (c.at_risk_count || 0) > 0 || (c.stale_count || 0) > 0 || (c.open_issues || 0) > 0;
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
+          <span style="font-weight:600;font-size:13px">${escapeHtml(c.client_name)}</span>
+          <span style="font-size:12px;color:var(--muted)">${c.project_count} projects · ${c.at_risk_count || 0} at risk · ${c.stale_count || 0} stale · ${c.open_issues || 0} issues</span>
+        </div>`;
+      }).join("")
+    : `<div class="empty-state">No clients yet</div>`;
+
+  // Open issues
+  const openIssues = data.open_issues || [];
+  document.getElementById("brief-open-issues").innerHTML = openIssues.length
+    ? openIssues.slice(0, 12).map(i => `
+        <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span class="tag" style="font-size:10px">${escapeHtml(i.category || "")}</span>
+          ${escapeHtml((i.title || "").slice(0, 50))}${(i.title || "").length > 50 ? "…" : ""}
+          ${i.client ? `<span style="color:var(--muted)"> · ${escapeHtml(i.client)}</span>` : ""}
+        </div>
+      `).join("")
+    : `<div class="empty-state">No open issues ✅</div>`;
 
   // Jira
   const jira = data.jira;
@@ -1515,14 +1602,14 @@ async function loadBrief() {
   if (!jira.configured) {
     jiraHtml = `<div class="empty-state">Jira not configured</div>`;
   } else {
-    const items = [...jira.blocked.map(t => ({...t, _type:"blocked"})), ...jira.stale.map(t => ({...t, _type:"stale"}))];
+    const items = [...(jira.blocked || []).map(t => ({...t, _type:"blocked"})), ...(jira.stale || []).map(t => ({...t, _type:"stale"}))];
     jiraHtml = items.length
       ? items.slice(0, 6).map(t => `
           <div class="jira-item">
-            <span class="jira-key">${t.key}</span>
+            <span class="jira-key">${escapeHtml(t.key)}</span>
             <div style="flex:1">
-              <div class="jira-summary">${t.summary}</div>
-              <div class="jira-assignee">${t.assignee} · <span class="tag tag-${t._type==='blocked'?'danger':'warn'}">${t._type}</span></div>
+              <div class="jira-summary">${escapeHtml((t.summary || "").slice(0, 50))}</div>
+              <div class="jira-assignee">${t.assignee || "—"} · <span class="tag tag-${t._type==='blocked'?'danger':'warn'}">${t._type}</span></div>
             </div>
           </div>
         `).join("")
@@ -1530,16 +1617,18 @@ async function loadBrief() {
   }
   document.getElementById("brief-jira").innerHTML = jiraHtml;
 
-  // Pipeline snapshot
+  // Pipeline snapshot (active only)
   const byStage = {};
-  data.all_projects.forEach(p => byStage[p.stage] = (byStage[p.stage] || 0) + 1);
-  document.getElementById("brief-pipeline").innerHTML = Object.entries(byStage)
-    .map(([stage, count]) => `
+  (data.all_projects || []).forEach(p => byStage[p.stage] = (byStage[p.stage] || 0) + 1);
+  document.getElementById("brief-pipeline").innerHTML = Object.entries(byStage).length
+    ? Object.entries(byStage)
+        .map(([stage, count]) => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:13px">${STAGE_EMOJI[stage]||'📌'} ${stage}</span>
         <span class="tag tag-gray">${count}</span>
       </div>
-    `).join("") || `<div class="empty-state">No projects yet</div>`;
+    `).join("")
+    : `<div class="empty-state">No projects yet</div>`;
 }
 
 // ── CLIENTS ──────────────────────────────────────────────────────────────────
@@ -1699,25 +1788,36 @@ async function loadGrooming() {
   _groomingClients = Array.isArray(clients) ? clients : [];
   _groomingClientLinks = links && typeof links === "object" ? links : {};
   const statuses = [...new Set(_groomingTickets.map(t => t.status).filter(Boolean))].sort();
+  const assignees = [...new Set(_groomingTickets.map(t => t.assignee).filter(Boolean))].sort();
   filterEl.innerHTML = `
     <span style="font-size:12px;color:var(--muted);font-weight:600">Status:</span>
     <select class="form-select" id="grooming-status-filter" style="width:auto;min-width:140px" onchange="filterGroomingTable()">
       <option value="">All</option>
-      ${statuses.map(s => `<option value="${s.replace(/"/g, "&quot;")}">${s}</option>`).join("")}
+      ${statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}
+    </select>
+    <span style="font-size:12px;color:var(--muted);font-weight:600;margin-left:16px">Assignee:</span>
+    <select class="form-select" id="grooming-assignee-filter" style="width:auto;min-width:160px" onchange="filterGroomingTable()">
+      <option value="">All</option>
+      ${assignees.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("")}
     </select>
   `;
   filterGroomingTable();
 }
 
 function filterGroomingTable() {
-  const filterSelect = document.getElementById("grooming-status-filter");
-  const statusFilter = filterSelect ? filterSelect.value : "";
-  const tickets = statusFilter
-    ? _groomingTickets.filter(t => t.status === statusFilter)
-    : _groomingTickets;
+  const statusSelect = document.getElementById("grooming-status-filter");
+  const assigneeSelect = document.getElementById("grooming-assignee-filter");
+  const statusFilter = statusSelect ? statusSelect.value : "";
+  const assigneeFilter = assigneeSelect ? assigneeSelect.value : "";
+  let tickets = _groomingTickets;
+  if (statusFilter) tickets = tickets.filter(t => t.status === statusFilter);
+  if (assigneeFilter) tickets = tickets.filter(t => (t.assignee || "") === assigneeFilter);
   const el = document.getElementById("grooming-list");
   if (!tickets.length) {
-    el.innerHTML = `<div class="empty-state">No tickets${statusFilter ? " in " + statusFilter : ""}.</div>`;
+    const parts = [];
+    if (statusFilter) parts.push("status " + statusFilter);
+    if (assigneeFilter) parts.push("assignee " + assigneeFilter);
+    el.innerHTML = `<div class="empty-state">No tickets${parts.length ? " with " + parts.join(" and ") : ""}.</div>`;
     return;
   }
   el.innerHTML = `
@@ -1949,9 +2049,30 @@ async function deleteEisenhowerTask(id) {
 }
 
 // ── ESCALATION TO PRODUCT ─────────────────────────────────────────────────────
+let _escalationTickets = [];
+let _lastScopeResult = null;  // { title, draft, jira_keys } from AI from-tickets
+
 async function loadEscalations() {
-  const data = await api("GET", "/api/escalations");
+  const [data, grooming] = await Promise.all([
+    api("GET", "/api/escalations"),
+    api("GET", "/api/jira/grooming"),
+  ]);
   if (!data) return;
+  _escalationTickets = (grooming && grooming.tickets) ? grooming.tickets : [];
+  const pickerEl = document.getElementById("escalation-ticket-picker");
+  if (pickerEl) {
+    if (!_escalationTickets.length) {
+      pickerEl.innerHTML = "<span style=\"color:var(--muted);font-size:13px\">No Jira tickets. Configure Jira or refresh Ticket Grooming.</span>";
+    } else {
+      pickerEl.innerHTML = _escalationTickets.map(t => `
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;white-space:nowrap;max-width:100%">
+          <input type="checkbox" class="escalation-ticket-cb" value="${escapeHtml(t.key)}" data-summary="${escapeHtml((t.summary || "").slice(0, 50))}">
+          <span class="jira-key">${escapeHtml(t.key)}</span>
+          <span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;max-width:180px" title="${escapeHtml(t.summary || "")}">${escapeHtml((t.summary || "").slice(0, 30))}${(t.summary || "").length > 30 ? "…" : ""}</span>
+        </label>
+      `).join("");
+    }
+  }
   const list = document.getElementById("escalations-list");
   if (!list) return;
   const items = Array.isArray(data) ? data : [];
@@ -2026,12 +2147,67 @@ async function submitEscalation() {
   loadEscalations();
 }
 
+async function generateEscalationFromTickets() {
+  const checked = document.querySelectorAll(".escalation-ticket-cb:checked");
+  const jiraKeys = [...checked].map(cb => cb.value).filter(Boolean);
+  if (!jiraKeys.length) {
+    showToast("Select at least one ticket");
+    return;
+  }
+  const contentEl = document.getElementById("scope-draft-content");
+  const titleBlock = document.getElementById("scope-draft-title-block");
+  const saveBtn = document.getElementById("scope-draft-save-btn");
+  const modalTitle = document.getElementById("scope-draft-modal-title");
+  contentEl.innerHTML = "<span class=\"ai-loading\">✦ AI is drafting title and product scope from selected tickets...</span>";
+  titleBlock.style.display = "none";
+  saveBtn.style.display = "none";
+  modalTitle.textContent = "Product scope draft";
+  document.getElementById("scope-draft-modal").classList.add("open");
+  const data = await api("POST", "/api/ai/product-scope/from-tickets", { jira_keys: jiraKeys });
+  _lastScopeResult = null;
+  if (data && data.draft) {
+    _lastScopeResult = { title: data.title || "Product escalation", draft: data.draft, jira_keys: data.jira_keys || jiraKeys };
+    modalTitle.textContent = "Product scope draft";
+    if (data.title) {
+      titleBlock.textContent = data.title;
+      titleBlock.style.display = "block";
+    }
+    contentEl.textContent = data.draft;
+    saveBtn.style.display = "inline-block";
+  } else {
+    contentEl.textContent = data?.error || "Error generating scope.";
+  }
+}
+
+async function saveEscalationFromDraft() {
+  if (!_lastScopeResult) return;
+  const res = await api("POST", "/api/escalations", {
+    title: _lastScopeResult.title,
+    jira_keys: _lastScopeResult.jira_keys,
+    drafted_scope: _lastScopeResult.draft,
+  });
+  if (res && res.id) {
+    showToast("Escalation saved");
+    _lastScopeResult = null;
+    document.getElementById("scope-draft-save-btn").style.display = "none";
+    document.getElementById("scope-draft-title-block").style.display = "none";
+    closeModal("scope-draft-modal");
+    loadEscalations();
+  } else showToast(res?.error || "Failed to save");
+}
+
 async function draftProductScope(escalationId) {
   const contentEl = document.getElementById("scope-draft-content");
+  const titleBlock = document.getElementById("scope-draft-title-block");
+  const saveBtn = document.getElementById("scope-draft-save-btn");
+  _lastScopeResult = null;
+  titleBlock.style.display = "none";
+  saveBtn.style.display = "none";
+  document.getElementById("scope-draft-modal-title").textContent = "Product scope draft";
   contentEl.innerHTML = "<span class=\"ai-loading\">✦ Drafting product scope from tickets, future notes, and Drive context...</span>";
   document.getElementById("scope-draft-modal").classList.add("open");
   const data = await api("POST", "/api/ai/product-scope", { escalation_id: escalationId });
-  contentEl.innerHTML = data?.draft || data?.error || "Error generating scope.";
+  contentEl.textContent = data?.draft || data?.error || "Error generating scope.";
 }
 
 async function deleteEscalation(id) {

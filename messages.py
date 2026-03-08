@@ -40,14 +40,70 @@ def _context(text):
 
 # ── MORNING BRIEF ─────────────────────────────────────────────────────────────
 
-def morning_brief(stale, at_risk, all_projects, jira_data=None):
+def morning_brief(stale, at_risk, all_projects, jira_data=None, all_with_done=None, by_client=None,
+                  go_live_this_week=None, go_live_overdue=None, recently_completed=None,
+                  open_issues=None, pending_do_first=None):
     today = datetime.now().strftime("%A, %d %b %Y")
+    done_count = len([p for p in (all_with_done or all_projects) if p.get("stage") == "Done"])
     blocks = [
         _header(f"☀️  CS Morning Brief — {today}"),
         _divider(),
-        _section(f"*{len(all_projects)} active projects* · *{len(at_risk)} at risk* · *{len(stale)} stale*"),
+        _section(
+            f"*{len(all_projects)} active* · *{done_count} completed* · *{len(at_risk)} at risk* · *{len(stale)} stale*"
+        ),
         _divider(),
     ]
+
+    # Pending / do first
+    if pending_do_first:
+        blocks.append(_section("*🎯 Pending / Do first*"))
+        lines = [f"• {item['label']}" for item in pending_do_first[:12]]
+        blocks.append(_section("\n".join(lines)))
+        blocks.append(_divider())
+
+    # By client (lens)
+    if by_client:
+        blocks.append(_section("*🏢 By client*"))
+        lines = []
+        for c in by_client[:10]:
+            parts = [f"{c['client_name']}: {c['project_count']} projects"]
+            if c.get("at_risk_count"):
+                parts.append(f"{c['at_risk_count']} at risk")
+            if c.get("stale_count"):
+                parts.append(f"{c['stale_count']} stale")
+            if c.get("open_issues"):
+                parts.append(f"{c['open_issues']} issues")
+            lines.append(" · ".join(parts))
+        blocks.append(_section("\n".join(lines)))
+        blocks.append(_divider())
+
+    # Go-live this week
+    if go_live_this_week:
+        blocks.append(_section("*📅 Go-live this week*"))
+        lines = [f"• *{p['client']}* — {p.get('go_live')} · {p.get('stage')}" for p in go_live_this_week[:8]]
+        blocks.append(_section("\n".join(lines)))
+        blocks.append(_divider())
+
+    # Go-live overdue
+    if go_live_overdue:
+        blocks.append(_section("*⚠️ Go-live overdue*"))
+        lines = [f"• *{p['client']}* — was {p.get('go_live')} · {p.get('stage')}" for p in go_live_overdue[:5]]
+        blocks.append(_section("\n".join(lines)))
+        blocks.append(_divider())
+
+    # Open issues snapshot
+    if open_issues:
+        blocks.append(_section("*🐛 Open issues*"))
+        lines = [f"• [{i.get('category')}] {i.get('title', '')[:45]} — {i.get('client', '—')}" for i in open_issues[:6]]
+        blocks.append(_section("\n".join(lines)))
+        blocks.append(_divider())
+
+    # Recently completed (ready for handoff / UAT)
+    if recently_completed:
+        blocks.append(_section("*✅ Recently completed (handoff / UAT)*"))
+        lines = [f"• *{p['client']}* — {(p.get('updated_at') or '')[:10]}" for p in recently_completed[:5]]
+        blocks.append(_section("\n".join(lines)))
+        blocks.append(_divider())
 
     # At risk section
     if at_risk:
