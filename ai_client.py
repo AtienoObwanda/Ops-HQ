@@ -403,78 +403,89 @@ Answer based on the data above."""
 
 # ── AI DOCUMENTS (industry-standard templates, tickets and/or context) ─────────
 
+# Applied to every generated document so outputs are consistent across templates.
+DOCUMENT_CONSISTENCY_RULES = """
+Document consistency (apply to all output):
+- Use clear numbered sections (1. 2. 3.) and optional subsections; bullet lists for scope/deliverables/actions.
+- Use consistent terminology: "Out of scope" (not OOS), "Success criteria", "Acceptance criteria"; avoid acronyms unless defined once.
+- Tone: professional, neutral; prefer active voice and concrete nouns.
+- No placeholder text like [TBD] or [Insert X] unless the template explicitly allows it; infer from context or write "To be confirmed" where needed.
+- Start with a document title line; include version or date where the template calls for it.
+"""
+
 DOCUMENT_TEMPLATES = {
     "product_scope": {
         "name": "Product scope / Escalation",
         "description": "Summary, background, proposed scope, OOS, success criteria, references.",
         "system": """You are a senior delivery/ops lead drafting a product scope for the Product team.
-Use ONLY the context provided (Jira tickets may include descriptions and comments — analyze comments end-to-end for decisions and context; and/or pasted context). Output a clear, structured document.
-Structure: 1) Summary (2–3 sentences). 2) Background/context. 3) Proposed scope (bullets). 4) Out of scope. 5) Success criteria. 6) References.
-Under 500 words. Plain English. Industry-standard product scope.""",
+Use ONLY the context provided (Jira tickets may include descriptions and comments — analyze comments end-to-end; and/or pasted context). Output a document that meets engineering/product standards.
+Structure: 1) Summary (2–3 sentences). 2) Background/context. 3) Proposed scope (bullets; each item clear and actionable). 4) Out of scope. 5) Success criteria (measurable/verifiable where possible). 6) References (ticket keys, docs).
+Under 500 words. Plain English. Suitable for engineering and product handoff.""",
     },
     "prd": {
         "name": "PRD (Product Requirements Document)",
         "description": "Overview, goals, user stories, acceptance criteria, OOS, dependencies.",
-        "system": """You are a product manager writing a Product Requirements Document (PRD).
-Use ONLY the context provided. Follow industry-standard PRD structure:
+        "system": """You are a product manager writing a Product Requirements Document (PRD) that meets engineering standards.
+Use ONLY the context provided. Follow industry-standard PRD structure (BABOK/PMI-aligned):
 1. Overview & problem statement
-2. Goals and success metrics
+2. Goals and success metrics (measurable)
 3. User personas (if applicable)
-4. User stories / requirements (clear, testable)
-5. Acceptance criteria
+4. User stories / requirements in clear, testable form (e.g. As a [role] I want [goal] so that [outcome]; or Given/When/Then)
+5. Acceptance criteria — each criterion must be testable/verifiable (no vague language)
 6. Out of scope
 7. Dependencies and assumptions
 8. Timeline / phases (if known)
-Under 600 words. Clear, actionable, stakeholder-ready.""",
+Under 600 words. Requirements must be unambiguous and implementable by engineering.""",
     },
     "technical_spec": {
         "name": "Technical specification",
         "description": "Overview, architecture, data/API, security, NFRs, risks.",
-        "system": """You are a technical lead writing a Technical Specification.
-Use ONLY the context provided. Follow industry-standard tech spec structure:
+        "system": """You are a technical lead writing a Technical Specification that meets engineering standards.
+Use ONLY the context provided. Follow industry-standard tech spec structure (IEEE/SWE best practices):
 1. Overview and objectives
-2. Architecture / approach
-3. Data model or API (key points)
+2. Architecture / approach (components, flow, key design decisions)
+3. Data model or API (key contracts, payloads, or schema points)
 4. Security and compliance considerations
-5. Non-functional requirements (performance, availability)
-6. Risks and mitigations
-Under 550 words. Precise, implementable.""",
+5. Non-functional requirements (performance, availability, scalability — measurable where possible)
+6. Error handling and rollback (if applicable)
+7. Risks and mitigations
+Under 550 words. Precise, implementable, and reviewable by engineers. Avoid vague language.""",
     },
     "uat_signoff": {
         "name": "UAT signoff",
         "description": "Formal UAT sign-off with scope summary and sign-off block.",
-        "system": """You are a delivery manager creating a UAT (User Acceptance Testing) signoff document.
-Use ONLY the context provided. Output a formal signoff:
-1. Document title and project/client name
-2. Scope summary (bullets of what is being accepted)
-3. Sign-off section: statement of acceptance, lines for Name, Role, Date, Signature
-4. Optional: comments/conditions
-Under 350 words. Professional, legally-sound style.""",
+        "system": """You are a delivery manager creating a UAT (User Acceptance Testing) signoff document that meets governance standards.
+Use ONLY the context provided. Output a formal signoff suitable for audit and compliance:
+1. Document title, version/date, and project/client name
+2. Scope summary (bullets of what is being accepted; traceable to requirements)
+3. Sign-off section: clear statement of acceptance, lines for Name, Role, Date, Signature
+4. Optional: comments/conditions/limitations
+Under 350 words. Professional, legally-sound, and suitable for client or internal approval.""",
     },
     "project_charter": {
         "name": "Project charter",
         "description": "Objectives, scope, deliverables, assumptions, success criteria.",
-        "system": """You are a project manager writing a Project Charter.
-Use ONLY the context provided. Follow PMI-style project charter structure:
+        "system": """You are a project manager writing a Project Charter that meets PMI/PMBOK standards.
+Use ONLY the context provided. Follow project charter best practices:
 1. Project name and sponsor
-2. Business case / objectives
-3. Scope (in and out)
-4. Key deliverables
+2. Business case / objectives (SMART where applicable)
+3. Scope (in and out; clear boundaries)
+4. Key deliverables (concrete, measurable)
 5. Assumptions and constraints
-6. High-level timeline
-7. Success criteria
-Under 500 words. Authoritative, approval-ready.""",
+6. High-level timeline and milestones
+7. Success criteria (measurable)
+Under 500 words. Authoritative and approval-ready for steering or sponsor sign-off.""",
     },
     "meeting_notes": {
         "name": "Meeting notes / Decision log",
         "description": "Decisions, action items, next steps.",
-        "system": """You are an operations lead writing meeting notes / decision log.
+        "system": """You are an operations lead writing meeting notes / decision log that meet governance standards.
 Use ONLY the context provided. Structure:
 1. Date and (if known) attendees
-2. Key decisions made
-3. Action items (owner + deliverable)
+2. Key decisions made (each decision clearly stated; reversible/irreversible if relevant)
+3. Action items (owner + deliverable + due date where possible)
 4. Next steps and follow-up date
-Under 400 words. Clear ownership and deadlines.""",
+Under 400 words. Clear ownership, deadlines, and audit trail.""",
     },
 }
 
@@ -490,7 +501,7 @@ def generate_document_from_template(template_id, tickets_text, context):
     template = DOCUMENT_TEMPLATES.get(template_id)
     if not template:
         raise ValueError(f"Unknown template: {template_id}")
-    system = template["system"]
+    system = DOCUMENT_CONSISTENCY_RULES.strip() + "\n\n" + template["system"]
     parts = []
     if tickets_text and tickets_text.strip():
         parts.append("--- JIRA TICKETS (description + comments when present; analyze end-to-end) ---\n" + tickets_text.strip())
