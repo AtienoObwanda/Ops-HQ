@@ -1635,7 +1635,12 @@ async function api(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(`${API}${path}`, opts);
   if (r.status === 401) { doLogout(); return null; }
-  return r.json();
+  const text = await r.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch (_) {
+    return { error: "Invalid response from server" };
+  }
 }
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────

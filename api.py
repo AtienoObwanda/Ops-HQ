@@ -29,6 +29,13 @@ import pdf_export as pdf_export
 _frontend = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
 app = Flask(__name__, static_folder=_frontend, static_url_path="")
 
+
+@app.errorhandler(500)
+def handle_500(e):
+    """Ensure all API errors return JSON (no HTML error page). e is the exception that caused the 500."""
+    return jsonify({"error": str(e)}), 500
+
+
 # ── AUTH ──────────────────────────────────────────────────────────────────────
 # Simple token-based auth. No OAuth complexity.
 # Tokens stored in memory — survive restarts via env var seeds.
