@@ -860,13 +860,18 @@ def ai_document():
     keys_raw = data.get("jira_keys") or []
     jira_keys = keys_raw if isinstance(keys_raw, list) else [k.strip() for k in str(keys_raw).replace(",", " ").split() if k.strip()]
     context = (data.get("context") or "").strip()
+    client_name = None
+    if data.get("client_id") is not None:
+        c = db.get_client(data["client_id"])
+        if c:
+            client_name = c.get("name") or ""
     tickets_text = ""
     if jira_keys:
         tickets = jira.get_tickets_by_keys(jira_keys)
         tickets_text = jira.format_tickets_for_ai(tickets) if tickets else ""
     try:
-        draft = ai.generate_document_from_template(template_id, tickets_text or None, context or None)
-        return jsonify({"draft": draft, "template_id": template_id})
+        draft = ai.generate_document_from_template(template_id, tickets_text or None, context or None, client_name=client_name)
+        return jsonify({"draft": draft, "template_id": template_id, "client_name": client_name})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

@@ -411,6 +411,7 @@ Document consistency (apply to all output):
 - Tone: professional, neutral; prefer active voice and concrete nouns.
 - No placeholder text like [TBD] or [Insert X] unless the template explicitly allows it; infer from context or write "To be confirmed" where needed.
 - Start with a document title line; include version or date where the template calls for it.
+- If a client name is provided for the document, the first line (document title) MUST include the client name (e.g. "PRD — Acme Corp" or "Technical specification — Acme Corp").
 """
 
 DOCUMENT_TEMPLATES = {
@@ -490,12 +491,13 @@ Under 400 words. Clear ownership, deadlines, and audit trail.""",
 }
 
 
-def generate_document_from_template(template_id, tickets_text, context):
+def generate_document_from_template(template_id, tickets_text, context, client_name=None):
     """
     Generate a document from an industry-standard template. Purely AI.
     template_id: key in DOCUMENT_TEMPLATES
     tickets_text: optional text from Jira tickets (includes descriptions and comments when provided)
     context: optional free-form context (user paste)
+    client_name: optional; when set, the document title must include this client name.
     If no tickets and no context, AI will still try to produce a draft from minimal prompt.
     """
     template = DOCUMENT_TEMPLATES.get(template_id)
@@ -503,6 +505,8 @@ def generate_document_from_template(template_id, tickets_text, context):
         raise ValueError(f"Unknown template: {template_id}")
     system = DOCUMENT_CONSISTENCY_RULES.strip() + "\n\n" + template["system"]
     parts = []
+    if client_name and client_name.strip():
+        parts.append(f"--- CLIENT FOR THIS DOCUMENT (include in document title) ---\nClient: {client_name.strip()}")
     if tickets_text and tickets_text.strip():
         parts.append("--- JIRA TICKETS (description + comments when present; analyze end-to-end) ---\n" + tickets_text.strip())
     if context and context.strip():

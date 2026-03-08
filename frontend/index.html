@@ -1052,7 +1052,13 @@
 
       <div class="card" style="margin-bottom:20px">
         <div class="card-title">📄 Document from template (AI)</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Industry-standard templates. Add Jira ticket keys and/or paste context — or leave both empty for a placeholder draft.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Industry-standard templates. All documents can include a client name in the title. Add Jira keys and/or context — or leave empty for a placeholder.</p>
+        <div class="form-field" style="margin-bottom:10px">
+          <label class="form-label">Client (optional — included in document title)</label>
+          <select class="form-select" id="doc-client-select">
+            <option value="">— None —</option>
+          </select>
+        </div>
         <div class="form-field" style="margin-bottom:10px">
           <label class="form-label">Template</label>
           <select class="form-select" id="doc-template-select">
@@ -2568,6 +2574,11 @@ async function loadAITools() {
     sel.innerHTML = `<option value="">Select client...</option>` +
       (clients || []).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
   }
+  const docClientSel = document.getElementById("doc-client-select");
+  if (docClientSel && Array.isArray(clients)) {
+    docClientSel.innerHTML = `<option value="">— None —</option>` +
+      clients.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+  }
   const docSel = document.getElementById("doc-template-select");
   if (docSel && Array.isArray(templates)) {
     docSel.innerHTML = templates.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
@@ -2578,6 +2589,8 @@ async function loadAITools() {
 async function generateAIDocument() {
   const templateId = document.getElementById("doc-template-select").value;
   if (!templateId) { showToast("Select a template"); return; }
+  const clientSel = document.getElementById("doc-client-select");
+  const clientId = clientSel && clientSel.value ? clientSel.value : undefined;
   const keysStr = document.getElementById("doc-jira-keys").value.trim();
   const jiraKeys = keysStr ? keysStr.split(/[\s,]+/).map(k => k.trim()).filter(Boolean) : [];
   const context = document.getElementById("doc-context").value.trim() || undefined;
@@ -2587,12 +2600,13 @@ async function generateAIDocument() {
   wrap.style.display = "block";
   out.textContent = "Generating...";
   if (btn) btn.disabled = true;
-  const data = await api("POST", "/api/ai/document", { template_id: templateId, jira_keys: jiraKeys.length ? jiraKeys : undefined, context });
+  const data = await api("POST", "/api/ai/document", { template_id: templateId, client_id: clientId || null, jira_keys: jiraKeys.length ? jiraKeys : undefined, context });
   if (btn) btn.disabled = false;
   _lastAIDocument = null;
   if (data && data.draft) {
     const templateName = document.getElementById("doc-template-select").selectedOptions[0]?.text || "Document";
-    _lastAIDocument = { title: templateName, draft: data.draft };
+    const clientName = (data.client_name || "").trim();
+    _lastAIDocument = { title: clientName ? `${clientName} — ${templateName}` : templateName, draft: data.draft };
     out.textContent = data.draft;
   } else {
     out.textContent = data?.error || "Error generating document.";
