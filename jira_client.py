@@ -412,7 +412,7 @@ def get_oncall_summary():
         updated = t.get("updated") or ""
         if updated:
             if oldest is None or (updated < oldest.get("updated", "")):
-                oldest = {"key": t.get("key"), "summary": (t.get("summary") or "")[:60], "updated": updated}
+                oldest = {"key": t.get("key"), "summary": (t.get("summary") or "")[:60], "updated": updated, "url": t.get("url", "")}
     return {
         "total_open": len(tickets),
         "by_status": by_status,
@@ -445,6 +445,84 @@ def get_grooming_tickets(max_results=80):
     except Exception as e:
         print(f"⚠️  Jira grooming tickets error: {e}")
         return []
+
+
+# ── ENGINEER PERFORMANCE (resolved tickets, pickup → closure) ───────────────────
+
+def get_resolved_tickets_for_performance(days=30, max_results=200):
+    """
+    Resolved (Done/Closed/Resolved) tickets in the last N days.
+    Used for engineer performance: created to resolutiondate = days_to_resolve.
+    Returns list of { key, assignee, created, resolutiondate, days_to_resolve }.
+    """
+    if not is_configured():
+        return []
+    project_jql = " OR ".join(f'project = "{k}"' for k in JIRA_PROJECT_KEYS)
+    jql = (
+        f"({project_jql}) "
+        f"AND status IN (Done, Closed, Resolved) "
+        f"AND resolutiondate >= -{int(days)}d "
+        f"{_created_since_jql()} "
+        f"ORDER BY resolutiondate DESC"
+    )
+    try:
+        issues = _jira_search_jql(
+            jql,
+            fields=["summary", "assignee", "created", "resolutiondate"],
+            max_results=max_results,
+        )
+        out = []
+        for issue in issues:
+            fields = issue.get("fields", {})
+            assignee = (fields.get("assignee") or {}).get("displayName", "Unassigned")
+            created = (fields.get("created") or "")[:10]
+            res = (fields.get("resolutiondate") or "")[:10]
+            if not created or not res:
+                continue
+            try:
+                d1 = datetime.strptime(created, "%Y-%m-%d")
+                d2 = datetime.strptime(res, "%Y-%m-%d")
+                days_to_resolve = max(0, (d2 - d1).days)
+            except Exception:
+                days_to_resolve = 0
+            out.append({
+                "key": issue.get("key", ""),
+                "assignee": assignee,
+                "created": created,
+                "resolutiondate": res,
+                "days_to_resolve": days_to_resolve,
+            })
+        return out
+    except Exception as e:
+        print(f"⚠️  Jira resolved tickets for performance error: {e}")
+        return []
+
+
+def get_engineer_performance_stats(days=30):
+    """
+    Aggregate by assignee: closed count, avg days to resolve (created → resolution).
+    Returns { "engineers": [ { name, closed_count, avg_days_to_resolve } ], "days": N }.
+    """
+    resolved = get_resolved_tickets_for_performance(days=days)
+    by_assignee = {}
+    for t in resolved:
+        name = (t.get("assignee") or "").strip() or "Unassigned"
+        if name.lower() in ("unassigned", "—", ""):
+            name = "Unassigned"
+        if name not in by_assignee:
+            by_assignee[name] = {"closed_count": 0, "days_list": []}
+        by_assignee[name]["closed_count"] += 1
+        by_assignee[name]["days_list"].append(t.get("days_to_resolve", 0))
+    engineers = []
+    for name, data in by_assignee.items():
+        days_list = data["days_list"]
+        avg = round(sum(days_list) / len(days_list), 1) if days_list else 0
+        engineers.append({
+            "name": name,
+            "closed_count": data["closed_count"],
+            "avg_days_to_resolve": avg,
+        })
+    return {"engineers": engineers, "days": days}
 
 
 # ── Jira ↔ Slack mapping (names don't need to match) ───────────────────────────

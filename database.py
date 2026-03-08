@@ -144,6 +144,15 @@ def init_db():
                 created_at    TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS documents (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                client_id   INTEGER REFERENCES clients(id),
+                template_id TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
     print(f"✅ DB initialised at {DB_PATH}")
 
@@ -542,6 +551,60 @@ def update_product_escalation(eid, **kwargs):
 def delete_product_escalation(eid):
     with get_conn() as conn:
         conn.execute("DELETE FROM product_escalations WHERE id = ?", (eid,))
+
+
+# ── DOCUMENTS REPOSITORY (AI-generated docs: PRD, tech spec, meeting notes, etc.) ─
+
+def add_document(title, template_id, content, client_id=None):
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO documents (title, client_id, template_id, content)
+               VALUES (?, ?, ?, ?)""",
+            (title.strip(), client_id, (template_id or "").strip(), (content or "").strip()),
+        )
+        return cur.lastrowid
+
+
+def list_documents(client_id=None, template_id=None, limit=100):
+    with get_conn() as conn:
+        q = """SELECT d.*, c.name as client_name FROM documents d
+               LEFT JOIN clients c ON d.client_id = c.id WHERE 1=1"""
+        params = []
+        if client_id is not None:
+            q += " AND d.client_id = ?"
+            params.append(client_id)
+        if template_id:
+            q += " AND d.template_id = ?"
+            params.append(template_id)
+        q += " ORDER BY d.updated_at DESC LIMIT ?"
+        params.append(limit)
+        return conn.execute(q, params).fetchall()
+
+
+def get_document(doc_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT d.*, c.name as client_name FROM documents d
+               LEFT JOIN clients c ON d.client_id = c.id WHERE d.id = ?""",
+            (doc_id,),
+        ).fetchone()
+        return row
+
+
+def update_document(doc_id, **kwargs):
+    allowed = {"title", "content", "client_id", "template_id"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return
+    updates["updated_at"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_conn() as conn:
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(f"UPDATE documents SET {set_clause} WHERE id = ?", list(updates.values()) + [doc_id])
+
+
+def delete_document(doc_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
 
 
 # ── REPORTING ─────────────────────────────────────────────────────────────────

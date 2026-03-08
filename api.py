@@ -895,6 +895,88 @@ def generate_pdf():
         return jsonify({"error": str(e)}), 500
 
 
+# ── DOCUMENTS REPOSITORY ───────────────────────────────────────────────────────
+
+@app.route("/api/documents", methods=["GET"])
+@_require_auth()
+def get_documents():
+    """List saved documents. Query: client_id, template_id."""
+    client_id = request.args.get("client_id", type=int)
+    template_id = (request.args.get("template_id") or "").strip() or None
+    rows = db.list_documents(client_id=client_id, template_id=template_id)
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/documents", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def create_document():
+    """Save a document to the repository. Body: title, template_id, content, client_id (optional)."""
+    data = request.json or {}
+    title = (data.get("title") or "").strip()
+    template_id = (data.get("template_id") or "").strip()
+    content = (data.get("content") or "").strip()
+    if not title or not template_id:
+        return jsonify({"error": "title and template_id required"}), 400
+    client_id = data.get("client_id")
+    if client_id is not None:
+        try:
+            client_id = int(client_id)
+        except (TypeError, ValueError):
+            client_id = None
+    doc_id = db.add_document(title=title, template_id=template_id, content=content, client_id=client_id)
+    return jsonify({"id": doc_id}), 201
+
+
+@app.route("/api/documents/<int:doc_id>", methods=["GET"])
+@_require_auth()
+def get_document(doc_id):
+    row = db.get_document(doc_id)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/documents/<int:doc_id>", methods=["PATCH"])
+@_require_auth(roles=["admin", "engineer"])
+def update_document(doc_id):
+    data = request.json or {}
+    allowed = {"title", "content", "client_id", "template_id"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "No valid fields to update"}), 400
+    if db.get_document(doc_id) is None:
+        return jsonify({"error": "Not found"}), 404
+    db.update_document(doc_id, **updates)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
+@_require_auth(roles=["admin", "engineer"])
+def delete_document(doc_id):
+    if db.get_document(doc_id) is None:
+        return jsonify({"error": "Not found"}), 404
+    db.delete_document(doc_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/documents/<int:doc_id>.pdf", methods=["GET"])
+@_require_auth()
+def download_document_pdf(doc_id):
+    row = db.get_document(doc_id)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    title = (row.get("title") or "Document").strip()
+    body = (row.get("content") or "").strip()
+    pdf_bytes = pdf_export.generic_pdf(title, body)
+    safe_name = "".join(c if c.isalnum() or c in " -_" else "-" for c in title)[:60]
+    return send_file(
+        BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"{safe_name}.pdf",
+    )
+
+
 # ── PRODUCT ESCALATIONS ───────────────────────────────────────────────────────
 
 @app.route("/api/escalations", methods=["GET"])
@@ -1149,11 +1231,72 @@ def team_workload():
             "oncall": jira.is_oncall_ticket(t.get("key") or ""),
         })
 
-    # Sort: by total work (projects + tickets) desc, then Unassigned last
-    def order(m):
-        total = len(m["projects"]) + len(m["tickets"])
-        return (-total, (m["name"] == "Unassigned"))
-    return jsonify(sorted(workload.values(), key=order))
+    # Only assigned engineers (exclude Unassigned); sort by total work desc
+    assigned = [m for m in workload.values() if m["name"] != "Unassigned"]
+    return jsonify(sorted(assigned, key=lambda m: -(len(m["projects"]) + len(m["tickets"]))))
+
+
+@app.route("/api/jira/engineer-performance", methods=["GET"])
+@_require_auth()
+def jira_engineer_performance():
+    """Resolved tickets in last N days by assignee: closed count, avg days to resolve (created → resolution). For Team Workload performance analysis."""
+    days = request.args.get("days", "30", type=str)
+    try:
+        days = int(days)
+    except ValueError:
+        days = 30
+    days = max(1, min(90, days))
+    stats = jira.get_engineer_performance_stats(days=days)
+    return jsonify(stats)
+
+
+@app.route("/api/ai/engineer-performance", methods=["POST"])
+@_require_auth()
+def ai_engineer_performance():
+    """AI analysis of engineer performance with trends: 7d, 30d, 90d closed counts + avg cycle time. Excludes Unassigned."""
+    # Multi-period stats for trend analysis
+    s7 = jira.get_engineer_performance_stats(days=7)
+    s30 = jira.get_engineer_performance_stats(days=30)
+    s90 = jira.get_engineer_performance_stats(days=90)
+    by_name = {}
+    for e in s7.get("engineers", []):
+        if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
+            continue
+        by_name[e["name"]] = {"name": e["name"], "closed_7d": e["closed_count"], "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+    for e in s30.get("engineers", []):
+        if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
+            continue
+        if e["name"] not in by_name:
+            by_name[e["name"]] = {"name": e["name"], "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+        by_name[e["name"]]["closed_30d"] = e["closed_count"]
+        by_name[e["name"]]["avg_days_to_resolve"] = e.get("avg_days_to_resolve")
+    for e in s90.get("engineers", []):
+        if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
+            continue
+        if e["name"] not in by_name:
+            by_name[e["name"]] = {"name": e["name"], "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+        by_name[e["name"]]["closed_90d"] = e["closed_count"]
+    # Open counts (tickets + projects)
+    projects = db.all_projects()
+    tickets = jira.get_grooming_tickets(max_results=200)
+    open_by_assignee = {}
+    for t in tickets:
+        assignee = (t.get("assignee") or "").strip()
+        if assignee and assignee.lower() not in ("unassigned", "—", ""):
+            open_by_assignee[assignee] = open_by_assignee.get(assignee, 0) + 1
+    for p in projects:
+        owner = (p.get("owner_name") or "").strip()
+        if owner and owner.lower() not in ("unassigned", "—", ""):
+            open_by_assignee[owner] = open_by_assignee.get(owner, 0) + 1
+    for name in list(open_by_assignee.keys()):
+        if name not in by_name and open_by_assignee[name] > 0:
+            by_name[name] = {"name": name, "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+    engineers = list(by_name.values())
+    for e in engineers:
+        e["open_count"] = open_by_assignee.get(e["name"], 0)
+    stats = {"engineers": engineers, "periods": {"7d": 7, "30d": 30, "90d": 90}}
+    analysis = ai.analyze_engineer_performance(stats)
+    return jsonify({"analysis": analysis, "periods": stats["periods"]})
 
 
 # ── SERVE FRONTEND ────────────────────────────────────────────────────────────

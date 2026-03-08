@@ -401,6 +401,39 @@ Answer based on the data above."""
     return _call(system, user, max_tokens=1000)
 
 
+def analyze_engineer_performance(stats):
+    """
+    Detailed AI analysis of engineer performance with trends (pickup → closure).
+    stats: { "engineers": [ { name, closed_7d, closed_30d, closed_90d, avg_days_to_resolve, open_count } ], "periods": { "7d": 7, "30d": 30, "90d": 90 } }.
+    Returns a detailed analysis with trends; Unassigned is excluded from input.
+    """
+    system = """You are an ops lead writing a detailed engineer performance report. You receive, per engineer:
+- closed_7d, closed_30d, closed_90d: tickets resolved in the last 7, 30, and 90 days (creation → resolution)
+- avg_days_to_resolve: average days from ticket creation to resolution (cycle time) over the 30-day window
+- open_count: current open work (open Jira tickets + pipeline projects)
+
+Write a detailed analysis (4–7 paragraphs) that:
+1. Summarises overall team throughput and cycle time.
+2. Describes trends: compare 7d vs 30d vs 90d to identify who is accelerating, who is steady, who may be slowing (e.g. "X closed 3 in the last 7 days vs 8 in 30d — pace up recently").
+3. Calls out load balance: high open_count vs closure rate, who might be overloaded or underutilised.
+4. Notes any standout cycle times (fast or slow resolvers) and what that might imply.
+Use names and numbers throughout. Be factual and neutral; no flattery or criticism. Aim for 400–550 words."""
+
+    engineers = stats.get("engineers", [])
+    lines = ["Multi-period closure and cycle time (all assigned engineers):", ""]
+    for e in engineers:
+        name = e.get("name", "—")
+        c7 = e.get("closed_7d", 0)
+        c30 = e.get("closed_30d", 0)
+        c90 = e.get("closed_90d", 0)
+        avg = e.get("avg_days_to_resolve")
+        open_cnt = e.get("open_count", 0)
+        avg_str = f"{avg} days" if avg is not None else "n/a"
+        lines.append(f"- {name}: closed 7d={c7} 30d={c30} 90d={c90} | avg cycle {avg_str} | open work {open_cnt}")
+    user = "\n".join(lines) if lines else "No data."
+    return _call(system, user, max_tokens=800)
+
+
 # ── AI DOCUMENTS (industry-standard templates, tickets and/or context) ─────────
 
 # Applied to every generated document so outputs are consistent across templates.

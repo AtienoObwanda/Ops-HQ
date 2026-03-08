@@ -210,20 +210,20 @@
     padding: 20px 24px;
     border-top: 1px solid var(--border);
   }
-  .theme-toggle-wrap { margin-bottom: 14px; }
+  .theme-toggle-wrap { margin-bottom: 14px; display: flex; justify-content: center; }
   .theme-toggle-btn {
-    width: 100%;
-    padding: 10px 14px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text);
-    font-size: 18px;
+    font-size: 16px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
     transition: border-color 0.2s, background 0.2s;
   }
   .theme-toggle-btn:hover { border-color: var(--accent); background: var(--card); }
@@ -300,6 +300,52 @@
     font-family: var(--mono);
     margin-bottom: 16px;
   }
+
+  /* ── ONCALL SUMMARY CARD ── */
+  .oncall-summary-lead {
+    font-size: 14px;
+    color: var(--text);
+    font-weight: 500;
+    margin-bottom: 16px;
+    line-height: 1.4;
+  }
+  .oncall-summary-stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .oncall-summary-stats strong { color: var(--text); font-weight: 600; }
+  .oncall-summary-block {
+    margin-bottom: 12px;
+  }
+  .oncall-summary-block:last-child { margin-bottom: 0; }
+  .oncall-summary-block-title {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-bottom: 6px;
+  }
+  .oncall-summary-block-content {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .oncall-summary-block-content .jira-key { font-size: 12px; }
+  .oncall-status-list, .oncall-assignee-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    list-style: none;
+  }
+  .oncall-status-list li, .oncall-assignee-list li {
+    font-size: 12px;
+    color: var(--text);
+  }
+  .oncall-status-list li span, .oncall-assignee-list li span { color: var(--muted); margin-right: 4px; }
 
   /* ── METRICS ROW ── */
   .metrics {
@@ -611,6 +657,22 @@
   }
 
   .workload-name { font-weight: 700; font-size: 15px; }
+  .workload-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .workload-summary-chip {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .workload-summary-chip strong { font-size: 13px; }
+  .workload-summary-chip .chip-meta { color: var(--muted); margin-top: 2px; }
 
   /* ── JIRA ITEM ── */
   .jira-item {
@@ -780,6 +842,9 @@
     <div class="nav-item" onclick="nav('scopeuat')" id="nav-scopeuat">
       <span class="nav-icon">📄</span> Scope & UAT
     </div>
+    <div class="nav-item" onclick="nav('documents')" id="nav-documents">
+      <span class="nav-icon">📁</span> Documents
+    </div>
     <div class="nav-item" onclick="nav('ai')" id="nav-ai">
       <span class="nav-icon">✨</span> AI Tools
     </div>
@@ -927,9 +992,17 @@
       <div class="page-header">
         <div>
           <div class="page-title">Team Workload</div>
-          <div class="page-sub">Populated from Ticket Grooming (Jira assignees) and Pipeline (project owners). Map engineers in JIRA_TO_SLACK.</div>
+          <div class="page-sub">Summary, AI analysis (with trends), and breakdown by engineer. Populated from Ticket Grooming and Pipeline; only assigned work shown. Map engineers in JIRA_TO_SLACK.</div>
         </div>
         <button class="btn-sm accent" onclick="loadWorkload()">↻ Refresh</button>
+      </div>
+      <div id="workload-summary"></div>
+      <div id="workload-performance" class="card" style="margin-top:16px;display:none">
+        <div class="card-title">Engineer performance (pickup → closure)</div>
+        <div id="workload-performance-content"></div>
+        <div style="margin-top:12px">
+          <button type="button" class="btn-sm accent" id="workload-perf-generate">Generate AI analysis</button>
+        </div>
       </div>
       <div id="workload-list"></div>
     </div>
@@ -1036,6 +1109,21 @@
       </div>
     </div>
 
+    <!-- DOCUMENTS REPOSITORY -->
+    <div class="page" id="page-documents">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Documents</div>
+          <div class="page-sub">Manage and organize saved documents (from AI templates). Filter by client or template.</div>
+        </div>
+        <button class="btn-sm accent" onclick="loadDocuments()">↻ Refresh</button>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div id="documents-filters" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px"></div>
+        <div id="documents-list"></div>
+      </div>
+    </div>
+
     <!-- AI TOOLS -->
     <div class="page" id="page-ai">
       <div class="page-header">
@@ -1075,9 +1163,10 @@
         </div>
         <button type="button" class="btn-accent" id="doc-generate-btn" onclick="generateAIDocument()">Generate document</button>
         <div id="doc-output-wrap" style="display:none;margin-top:14px">
-          <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
             <button type="button" class="btn-sm" onclick="copyAIDocument()">Copy</button>
             <button type="button" class="btn-sm" onclick="downloadAIDocumentPdf()">Download PDF</button>
+            <button type="button" class="btn-sm" onclick="saveAIDocumentToRepo()">Save to repository</button>
           </div>
           <div class="ai-output" id="doc-output" style="white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
         </div>
@@ -1140,6 +1229,16 @@
 </div>
 
 <!-- ADD CLIENT MODAL -->
+<div class="modal-overlay" id="document-view-modal">
+  <div class="modal" style="max-width:720px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column">
+    <div class="modal-title" id="document-view-title">Document</div>
+    <div id="document-view-content" style="flex:1;overflow-y:auto;white-space:pre-wrap;font-size:13px;font-family:var(--mono)"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn-secondary" onclick="closeModal('document-view-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="client-modal">
   <div class="modal" style="max-width:400px">
     <div class="modal-title">Add client</div>
@@ -1184,8 +1283,12 @@
     <div class="form-field">
       <label class="form-label">Stage</label>
       <select class="form-select" id="pm-stage">
-        <option>Discovery</option><option>Config</option><option>Integration</option>
-        <option>UAT</option><option>Go-Live</option><option>Hypercare</option>
+        <option value="Discovery">Discovery</option>
+        <option value="Config">To Do</option>
+        <option value="Integration">In progress</option>
+        <option value="UAT">UAT</option>
+        <option value="Go-Live">Customer testing</option>
+        <option value="Hypercare">Done</option>
       </select>
     </div>
     <div class="form-field">
@@ -1408,6 +1511,14 @@ const STAGE_EMOJI = {
   Discovery:"🔍", Config:"⚙️", Integration:"🔗",
   UAT:"🧪", "Go-Live":"🚀", Hypercare:"🛡️", Done:"✅"
 };
+// Project timeline display labels (internal stage → user-facing)
+const STAGE_LABELS = {
+  "Config": "To Do",
+  "Integration": "In progress",
+  "Go-Live": "Customer testing",
+  "Hypercare": "Done"
+};
+function stageDisplay(stage) { return stage ? (STAGE_LABELS[stage] || stage) : ""; }
 const HEALTH_COLORS = { "On Track":"green", "At Risk":"warn", "Blocked":"danger" };
 const CAT_COLORS = {
   integration:"#4d9fff", reconciliation:"#f4a261", client:"#7b8cde",
@@ -1455,7 +1566,24 @@ function doLogout() {
   document.getElementById("login-screen").style.display = "flex";
 }
 
+function playClickSound() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    osc.type = "sine";
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.06);
+  } catch (_) {}
+}
+
 function toggleTheme() {
+  playClickSound();
   var root = document.documentElement;
   var current = root.getAttribute("data-theme") || "dark";
   var next = current === "dark" ? "light" : "dark";
@@ -1495,6 +1623,7 @@ function nav(page) {
     escalations: loadEscalations,
     issues:   loadIssues,
     scopeuat: loadScopeUat,
+    documents: loadDocuments,
     ai:       loadAITools,
   };
   loaders[page]?.();
@@ -1551,7 +1680,7 @@ async function loadBrief() {
         <div class="project-row" onclick="nav('pipeline')">
           <span class="health-dot dot-${p.health==='Blocked'?'danger':'warn'}"></span>
           <span class="project-client">${escapeHtml(p.client)}</span>
-          <span class="project-stage">${p.stage}</span>
+          <span class="project-stage">${stageDisplay(p.stage)}</span>
           <span class="tag tag-${p.health==='Blocked'?'danger':'warn'}">${p.health}</span>
         </div>
       `).join("")
@@ -1576,7 +1705,7 @@ async function loadBrief() {
         <div class="project-row" onclick="nav('pipeline')">
           <span class="project-client">${escapeHtml(p.client)}</span>
           <span style="font-size:12px;color:var(--muted)">${p.go_live || ""}</span>
-          <span class="tag tag-gray">${p.stage || ""}</span>
+          <span class="tag tag-gray">${stageDisplay(p.stage) || ""}</span>
         </div>
       `).join("")
     : `<div class="empty-state">None this week</div>`;
@@ -1647,7 +1776,7 @@ async function loadBrief() {
     ? Object.entries(byStage)
         .map(([stage, count]) => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-        <span style="font-size:13px">${STAGE_EMOJI[stage]||'📌'} ${stage}</span>
+        <span style="font-size:13px">${STAGE_EMOJI[stage]||'📌'} ${stageDisplay(stage)}</span>
         <span class="tag tag-gray">${count}</span>
       </div>
     `).join("")
@@ -1708,7 +1837,7 @@ async function openClientDetail(cid) {
   document.getElementById("cd-name").textContent = c.name;
   document.getElementById("cd-content").innerHTML = `
     <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Projects: ${projects.length} · Open issues: ${openIssues.length}${jiraTickets.length ? ` · Jira tickets: ${jiraTickets.length}` : ""}</div>
-    <div style="margin-bottom:14px"><strong>Projects</strong><div style="margin-top:6px">${projects.length ? projects.map(p => `<span class="tag tag-gray" style="margin-right:6px;margin-bottom:6px">${escapeHtml(p.name || p.client)} · ${escapeHtml(p.stage || "")}</span>`).join("") : "—"}</div></div>
+    <div style="margin-bottom:14px"><strong>Projects</strong><div style="margin-top:6px">${projects.length ? projects.map(p => `<span class="tag tag-gray" style="margin-right:6px;margin-bottom:6px">${escapeHtml(p.name || p.client)} · ${escapeHtml(stageDisplay(p.stage) || "")}</span>`).join("") : "—"}</div></div>
     <div style="margin-bottom:14px"><strong>Open issues</strong><div style="margin-top:6px;max-height:140px;overflow-y:auto">${openIssues.length ? openIssues.map(i => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">${escapeHtml(i.title)} <span class="tag" style="font-size:10px">${escapeHtml(i.category || "")}</span></div>`).join("") : "No open issues"}</div></div>
     ${jiraSection}
     <div style="margin-bottom:8px"><strong>Analysis notes</strong></div>
@@ -1767,7 +1896,7 @@ async function loadPipeline() {
   document.getElementById("pipeline-board").innerHTML = stages.map(stage => `
     <div class="pipeline-col">
       <div class="pipeline-col-title">
-        ${STAGE_EMOJI[stage]} ${stage}
+        ${STAGE_EMOJI[stage]} ${stageDisplay(stage)}
         <span class="pipeline-count">${byStage[stage].length}</span>
       </div>
       ${byStage[stage].map(item => {
@@ -1795,19 +1924,37 @@ async function loadPipeline() {
       clients.map(c => `<option value="${c.id}" data-name="${(c.name || "").replace(/"/g, "&quot;")}">${c.name}</option>`).join("");
   }
 
-  // Table
-  document.getElementById("project-list").innerHTML = projects.length
-    ? projects.map(p => `
+  // Table: DB projects + Jira pipeline tickets (same sources as board, so list matches pipeline)
+  const jiraTickets = (jiraData && jiraData.tickets) || [];
+  const hasProjects = projects.length > 0;
+  const hasJira = jiraTickets.length > 0;
+  let listHtml = "";
+  if (hasProjects) {
+    listHtml += projects.map(p => `
         <div class="project-row" onclick="openProjectDetail(${p.id})">
           <span class="health-dot dot-${HEALTH_COLORS[p.health]==='green'?'green':HEALTH_COLORS[p.health]==='warn'?'warn':'danger'}"></span>
-          <span class="project-client">${p.client}</span>
-          <span class="project-stage">${STAGE_EMOJI[p.stage]||''} ${p.stage}</span>
-          <span class="project-owner">${p.owner_name || "—"}${p.recon_name ? " · " + p.recon_name : ""}</span>
+          <span class="project-client">${escapeHtml(p.client)}</span>
+          <span class="project-stage">${STAGE_EMOJI[p.stage]||''} ${stageDisplay(p.stage)}</span>
+          <span class="project-owner">${escapeHtml(p.owner_name || "—")}${p.recon_name ? " · " + escapeHtml(p.recon_name) : ""}</span>
           <span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span>
           ${p.go_live ? `<span style="font-size:11px;color:var(--muted);font-family:var(--mono)">🗓 ${p.go_live}</span>` : ""}
         </div>
-      `).join("")
-    : `<div class="empty-state">No projects yet. Click "+ Add Project" to start.</div>`;
+      `).join("");
+  }
+  if (hasJira) {
+    listHtml += jiraTickets.map(t => `
+        <div class="project-row project-row-jira">
+          <span class="health-dot" style="background:var(--muted);opacity:0.6"></span>
+          <span class="project-client"><a href="${t.url || "#"}" target="_blank" rel="noopener" class="jira-key">${escapeHtml(t.key)}</a></span>
+          <span class="project-stage">${STAGE_EMOJI[t.stage]||''} ${stageDisplay(t.stage)}</span>
+          <span class="project-owner">${escapeHtml(t.assignee || "—")}</span>
+          <span class="tag tag-gray" style="font-size:10px">Jira</span>
+          <span style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${escapeHtml(t.summary || "")}">${escapeHtml((t.summary || "").slice(0, 35))}${(t.summary || "").length > 35 ? "…" : ""}</span>
+        </div>
+      `).join("");
+  }
+  document.getElementById("project-list").innerHTML = listHtml
+    || `<div class="empty-state">No projects yet. Click "+ Add Project" to start. Add Jira project keys in .env to see tickets in the pipeline.</div>`;
 }
 
 // ── TICKET GROOMING (Jira) ────────────────────────────────────────────────────
@@ -1943,23 +2090,25 @@ async function loadOncall() {
     const byStatus = summary.by_status || {};
     const byAssignee = summary.by_assignee || {};
     const oldest = summary.oldest_ticket;
-    const statusLines = Object.entries(byStatus).sort((a, b) => b[1] - a[1]).map(([s, c]) => `${s}: ${c}`).join(" · ");
-    const assigneeLines = Object.entries(byAssignee).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([a, c]) => `${a}: ${c}`).join(" · ");
-    let analysis = `${total} open oncall ticket${total !== 1 ? "s" : ""}`;
-    if (unassigned > 0) analysis += `, ${unassigned} unassigned`;
-    if (statusLines) analysis += `. Status: ${statusLines}`;
-    if (oldest) analysis += `. Oldest: ${oldest.key} (${(oldest.updated || "").slice(0, 10)})`;
+    const statusEntries = Object.entries(byStatus).sort((a, b) => b[1] - a[1]);
+    const assigneeEntries = Object.entries(byAssignee).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const lead = `${total} open oncall ticket${total !== 1 ? "s" : ""}${unassigned > 0 ? `, ${unassigned} unassigned.` : "."}`;
+    const statusList = statusEntries.map(([s, c]) => `<li><span>${escapeHtml(s)}:</span> ${c}</li>`).join("");
+    const assigneeList = assigneeEntries.map(([a, c]) => `<li><span>${escapeHtml(a)}:</span> ${c}</li>`).join("");
+    const oldestLine = oldest
+      ? `<a href="${oldest.url || "#"}" target="_blank" rel="noopener" class="jira-key">${escapeHtml(oldest.key)}</a> — ${escapeHtml((oldest.summary || "").slice(0, 60))}${(oldest.summary || "").length > 60 ? "…" : ""} (${(oldest.updated || "").slice(0, 10)})`
+      : "";
     summaryEl.innerHTML = `
       <div class="card">
         <div class="card-title">Summary &amp; analysis</div>
-        <p style="font-size:13px;color:var(--text);margin-bottom:10px">${escapeHtml(analysis)}</p>
-        <div class="grid-2" style="gap:12px;font-size:12px;color:var(--muted)">
-          <div><strong style="color:var(--text)">Total open</strong> ${total}</div>
-          <div><strong style="color:var(--text)">Unassigned</strong> ${unassigned}</div>
-          ${statusLines ? `<div style="grid-column:1/-1"><strong style="color:var(--text)">By status</strong> ${escapeHtml(statusLines)}</div>` : ""}
-          ${assigneeLines ? `<div style="grid-column:1/-1"><strong style="color:var(--text)">By assignee</strong> ${escapeHtml(assigneeLines)}</div>` : ""}
-          ${oldest ? `<div style="grid-column:1/-1"><strong style="color:var(--text)">Oldest open</strong> <a href="#" class="jira-key">${escapeHtml(oldest.key)}</a> — ${escapeHtml((oldest.summary || "").slice(0, 50))}${(oldest.summary || "").length > 50 ? "…" : ""} (${(oldest.updated || "").slice(0, 10)})</div>` : ""}
+        <p class="oncall-summary-lead">${escapeHtml(lead)}</p>
+        <div class="oncall-summary-stats">
+          <span><strong>Total open</strong> ${total}</span>
+          <span><strong>Unassigned</strong> ${unassigned}</span>
         </div>
+        ${statusList ? `<div class="oncall-summary-block"><div class="oncall-summary-block-title">By status</div><ul class="oncall-status-list">${statusList}</ul></div>` : ""}
+        ${assigneeList ? `<div class="oncall-summary-block"><div class="oncall-summary-block-title">By assignee</div><ul class="oncall-assignee-list">${assigneeList}</ul></div>` : ""}
+        ${oldestLine ? `<div class="oncall-summary-block"><div class="oncall-summary-block-title">Oldest open</div><div class="oncall-summary-block-content">${oldestLine}</div></div>` : ""}
       </div>`;
   } else {
     summaryEl.innerHTML = "";
@@ -2480,11 +2629,60 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
-// ── WORKLOAD (from grooming + DB projects, engineers mapped) ───────────────────
+// ── WORKLOAD (from grooming + DB projects, engineers mapped; Unassigned excluded) ──
 async function loadWorkload() {
   const data = await api("GET", "/api/team/workload");
   if (!data) return;
   const hasAny = data.length && data.some(m => (m.projects && m.projects.length) || (m.tickets && m.tickets.length));
+
+  // Summary row at top
+  const summaryEl = document.getElementById("workload-summary");
+  if (data.length && hasAny) {
+    summaryEl.innerHTML = `
+      <div class="card-title">Summary</div>
+      <div class="workload-summary-row">
+        ${data.filter(m => (m.projects && m.projects.length) || (m.tickets && m.tickets.length)).map(member => {
+          const projects = member.projects || [];
+          const tickets = member.tickets || [];
+          const sub = [projects.length ? projects.length + " projects" : "", tickets.length ? tickets.length + " tickets" : ""].filter(Boolean).join(" · ");
+          return `<div class="workload-summary-chip">
+            <strong>${escapeHtml(member.name)}</strong>
+            <div class="chip-meta">${sub}${member.at_risk > 0 ? " · " + member.at_risk + " at risk" : ""}</div>
+          </div>`;
+        }).join("")}
+      </div>`;
+  } else {
+    summaryEl.innerHTML = "";
+  }
+
+  // Performance card: show and wire button (detailed analysis with 7d/30d/90d trends)
+  const perfCard = document.getElementById("workload-performance");
+  const perfContent = document.getElementById("workload-performance-content");
+  perfCard.style.display = "block";
+  if (!perfContent.dataset.wired) {
+    perfContent.dataset.wired = "1";
+    document.getElementById("workload-perf-generate").addEventListener("click", async function() {
+      this.disabled = true;
+      perfContent.textContent = "Generating…";
+      try {
+        const res = await api("POST", "/api/ai/engineer-performance");
+        if (res && res.analysis) {
+          perfContent.innerHTML = `<div style="white-space:pre-wrap;font-size:13px;line-height:1.5">${escapeHtml(res.analysis)}</div>`;
+        } else {
+          perfContent.textContent = "No analysis returned.";
+        }
+      } catch (e) {
+        perfContent.textContent = "Failed to generate analysis.";
+        showToast(e.message || "Error");
+      }
+      this.disabled = false;
+    });
+  }
+  if (!perfContent.innerHTML || perfContent.textContent === "Generating…") {
+    perfContent.textContent = "Click \"Generate AI analysis\" for a detailed performance report with trends (7d, 30d, 90d closure rates and cycle time).";
+  }
+
+  // Breakdown: engineer cards (assigned only; Unassigned not in API)
   document.getElementById("workload-list").innerHTML = hasAny
     ? data.map(member => {
         const projects = member.projects || [];
@@ -2508,7 +2706,7 @@ async function loadWorkload() {
               <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
                 <span class="health-dot dot-${HEALTH_COLORS[p.health]==='green'?'green':HEALTH_COLORS[p.health]==='warn'?'warn':'danger'}"></span>
                 <span style="font-size:13px;font-weight:600;flex:1">${escapeHtml(p.client)}</span>
-                <span class="tag tag-gray">${escapeHtml(p.stage || "")}</span>
+                <span class="tag tag-gray">${escapeHtml(stageDisplay(p.stage) || "")}</span>
               </div>
             `).join("")}
             ${tickets.map(t => `
@@ -2635,6 +2833,113 @@ async function downloadAIDocumentPdf() {
   showToast("Download started");
 }
 
+const DOC_TEMPLATE_NAMES = { product_scope: "Product scope", prd: "PRD", technical_spec: "Technical spec", uat_signoff: "UAT signoff", project_charter: "Project charter", meeting_notes: "Meeting notes" };
+
+async function saveAIDocumentToRepo() {
+  if (!_lastAIDocument) { showToast("Generate a document first"); return; }
+  const templateId = document.getElementById("doc-template-select").value;
+  if (!templateId) { showToast("Select a template"); return; }
+  const clientSel = document.getElementById("doc-client-select");
+  const clientId = clientSel && clientSel.value ? clientSel.value : null;
+  const res = await api("POST", "/api/documents", {
+    title: _lastAIDocument.title,
+    template_id: templateId,
+    content: _lastAIDocument.draft,
+    client_id: clientId || undefined,
+  });
+  if (res && res.id) {
+    showToast("Saved to Documents");
+    nav("documents");
+  } else {
+    showToast(res?.error || "Failed to save");
+  }
+}
+
+// ── DOCUMENTS REPOSITORY ─────────────────────────────────────────────────────
+async function loadDocuments() {
+  const filterEl = document.getElementById("documents-filters");
+  const listEl = document.getElementById("documents-list");
+  if (!filterEl || !listEl) return;
+  const clientId = document.getElementById("documents-filter-client")?.value || "";
+  const templateId = document.getElementById("documents-filter-template")?.value || "";
+  const params = new URLSearchParams();
+  if (clientId) params.set("client_id", clientId);
+  if (templateId) params.set("template_id", templateId);
+  const [list, clients, templates] = await Promise.all([
+    api("GET", "/api/documents" + (params.toString() ? "?" + params.toString() : "")),
+    api("GET", "/api/clients"),
+    api("GET", "/api/ai/document-templates"),
+  ]);
+  const docs = Array.isArray(list) ? list : [];
+  filterEl.innerHTML = `
+    <span style="font-size:12px;color:var(--muted);font-weight:600">Client</span>
+    <select class="form-select" id="documents-filter-client" style="width:auto;min-width:140px" onchange="loadDocuments()">
+      <option value="">All</option>
+      ${(clients || []).map(c => `<option value="${c.id}"${c.id == clientId ? " selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
+    </select>
+    <span style="font-size:12px;color:var(--muted);font-weight:600;margin-left:12px">Template</span>
+    <select class="form-select" id="documents-filter-template" style="width:auto;min-width:160px" onchange="loadDocuments()">
+      <option value="">All</option>
+      ${(templates || []).map(t => `<option value="${escapeHtml(t.id)}"${t.id === templateId ? " selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}
+    </select>
+  `;
+  listEl.innerHTML = docs.length
+    ? `<table class="grooming-table">
+        <thead><tr><th>Title</th><th>Client</th><th>Type</th><th>Updated</th><th>Actions</th></tr></thead>
+        <tbody>${docs.map(d => `
+          <tr>
+            <td style="font-weight:600">${escapeHtml((d.title || "").slice(0, 50))}${(d.title || "").length > 50 ? "…" : ""}</td>
+            <td style="font-size:12px;color:var(--muted)">${escapeHtml(d.client_name || "—")}</td>
+            <td><span class="tag tag-gray">${escapeHtml(DOC_TEMPLATE_NAMES[d.template_id] || d.template_id)}</span></td>
+            <td style="font-size:11px;font-family:var(--mono);color:var(--muted)">${(d.updated_at || d.created_at || "").slice(0, 10)}</td>
+            <td>
+              <button type="button" class="btn-sm" onclick="viewDocument(${d.id})">View</button>
+              <button type="button" class="btn-sm" onclick="copyDocumentContent(${d.id})">Copy</button>
+              <button type="button" class="btn-sm" onclick="documentDownloadWithAuth(event, ${d.id})">PDF</button>
+              ${USER.role === "admin" || USER.role === "engineer" ? `<button type="button" class="btn-sm" onclick="deleteDocument(${d.id})">Delete</button>` : ""}
+            </td>
+          </tr>
+        `).join("")}</tbody>
+      </table>`
+    : `<div class="empty-state">No documents yet. Generate one from <a href="#" onclick="nav('ai');return false" style="color:var(--accent)">AI Tools → Document from template</a> and click "Save to repository".</div>`;
+}
+
+async function documentDownloadWithAuth(e, id) {
+  e.preventDefault();
+  const r = await fetch(`${API}/api/documents/${id}.pdf`, { headers: { "Authorization": "Bearer " + (TOKEN || "") } });
+  if (!r.ok) { showToast("Download failed"); return; }
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "document-" + id + ".pdf";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("Download started");
+}
+
+async function viewDocument(id) {
+  const d = await api("GET", "/api/documents/" + id);
+  if (!d) return;
+  const modal = document.getElementById("document-view-modal");
+  if (!modal) return;
+  document.getElementById("document-view-title").textContent = d.title || "Document";
+  document.getElementById("document-view-content").textContent = d.content || "";
+  document.getElementById("document-view-modal").classList.add("open");
+}
+
+async function copyDocumentContent(id) {
+  const d = await api("GET", "/api/documents/" + id);
+  if (!d || !d.content) return;
+  navigator.clipboard.writeText(d.content).then(() => showToast("Copied")).catch(() => showToast("Copy failed"));
+}
+
+async function deleteDocument(id) {
+  if (!confirm("Delete this document?")) return;
+  const res = await api("DELETE", "/api/documents/" + id);
+  if (res && res.ok) { showToast("Deleted"); loadDocuments(); }
+  else showToast(res?.error || "Failed");
+}
+
 async function askCockpitAI() {
   const prompt = document.getElementById("ask-ai-prompt").value.trim();
   if (!prompt) { showToast("Type a question"); return; }
@@ -2744,7 +3049,7 @@ async function openProjectDetail(pid) {
   _currentProjectId = pid;
   document.getElementById("pd-title").textContent = p.client + (p.name && p.name !== p.client ? " — " + p.name : "");
   document.getElementById("pd-meta").innerHTML = [
-    p.stage ? `${STAGE_EMOJI[p.stage] || ""} ${p.stage}` : "",
+    p.stage ? `${STAGE_EMOJI[p.stage] || ""} ${stageDisplay(p.stage)}` : "",
     p.health ? ` · ${p.health}` : "",
     p.owner_name ? ` · Owner: ${p.owner_name}` : "",
     p.recon_name ? ` · Recon: ${p.recon_name}` : "",
@@ -2856,7 +3161,7 @@ async function loadScopeUat() {
           <div style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:10px">
             <div style="flex:1;min-width:200px">
               <div style="font-weight:600">${escapeHtml(p.client)} — ${escapeHtml(p.name || p.client)}</div>
-              <div style="font-size:12px;color:var(--muted)">${p.stage || ""} ${scopeDate ? " · Scope " + scopeDate : ""} ${uatDate ? " · UAT " + uatDate : ""}</div>
+              <div style="font-size:12px;color:var(--muted)">${stageDisplay(p.stage) || ""} ${scopeDate ? " · Scope " + scopeDate : ""} ${uatDate ? " · UAT " + uatDate : ""}</div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn-sm accent" onclick="openProjectDetail(${p.id})">Open</button>
