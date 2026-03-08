@@ -432,6 +432,8 @@
     font-size: 14px;
     flex: 1;
   }
+  #project-list .project-row { align-items: flex-start; }
+  #project-list .project-client { word-wrap: break-word; overflow-wrap: break-word; }
 
   .project-stage { font-size: 12px; color: var(--muted); font-family: var(--mono); min-width: 90px; }
   .project-owner { font-size: 12px; color: var(--muted); min-width: 100px; }
@@ -916,20 +918,20 @@
       </div>
     </div>
 
-    <!-- PIPELINE -->
+    <!-- PIPELINE (All Projects list first, then board by Jira status below) -->
     <div class="page" id="page-pipeline">
       <div class="page-header">
         <div>
           <div class="page-title">Project Pipeline</div>
-          <div class="page-sub">All active projects by stage</div>
+          <div class="page-sub">All active projects by stage. Stages from Jira statuses.</div>
         </div>
         <button class="btn-sm accent" onclick="openAddProject()">+ Add Project</button>
       </div>
-      <div class="pipeline" id="pipeline-board"></div>
       <div class="card">
         <div class="card-title">All Projects</div>
         <div id="project-list"></div>
       </div>
+      <div class="pipeline" id="pipeline-board" style="margin-top:20px"></div>
     </div>
 
     <!-- CLIENTS -->
@@ -1924,34 +1926,28 @@ async function loadPipeline() {
       clients.map(c => `<option value="${c.id}" data-name="${(c.name || "").replace(/"/g, "&quot;")}">${c.name}</option>`).join("");
   }
 
-  // Table: DB projects + Jira pipeline tickets (same sources as board, so list matches pipeline)
+  // Table: per client per issue name only (DB projects + Jira pipeline tickets)
   const jiraTickets = (jiraData && jiraData.tickets) || [];
   const hasProjects = projects.length > 0;
   const hasJira = jiraTickets.length > 0;
   let listHtml = "";
   if (hasProjects) {
-    listHtml += projects.map(p => `
-        <div class="project-row" onclick="openProjectDetail(${p.id})">
-          <span class="health-dot dot-${HEALTH_COLORS[p.health]==='green'?'green':HEALTH_COLORS[p.health]==='warn'?'warn':'danger'}"></span>
-          <span class="project-client">${escapeHtml(p.client)}</span>
-          <span class="project-stage">${STAGE_EMOJI[p.stage]||''} ${stageDisplay(p.stage)}</span>
-          <span class="project-owner">${escapeHtml(p.owner_name || "—")}${p.recon_name ? " · " + escapeHtml(p.recon_name) : ""}</span>
-          <span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span>
-          ${p.go_live ? `<span style="font-size:11px;color:var(--muted);font-family:var(--mono)">🗓 ${p.go_live}</span>` : ""}
-        </div>
-      `).join("");
+    listHtml += projects.map(p => {
+      const name = (p.name || p.client || "").trim() || "—";
+      const client = (p.client || "").trim();
+      const line = client && name !== client ? `${client} — ${name}` : (client || name);
+      return `<div class="project-row" onclick="openProjectDetail(${p.id})" title="${escapeHtml(line)}">
+          <span class="project-client">${escapeHtml(line)}</span>
+        </div>`;
+    }).join("");
   }
   if (hasJira) {
-    listHtml += jiraTickets.map(t => `
-        <div class="project-row project-row-jira">
-          <span class="health-dot" style="background:var(--muted);opacity:0.6"></span>
-          <span class="project-client"><a href="${t.url || "#"}" target="_blank" rel="noopener" class="jira-key">${escapeHtml(t.key)}</a></span>
-          <span class="project-stage">${STAGE_EMOJI[t.stage]||''} ${stageDisplay(t.stage)}</span>
-          <span class="project-owner">${escapeHtml(t.assignee || "—")}</span>
-          <span class="tag tag-gray" style="font-size:10px">Jira</span>
-          <span style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px" title="${escapeHtml(t.summary || "")}">${escapeHtml((t.summary || "").slice(0, 35))}${(t.summary || "").length > 35 ? "…" : ""}</span>
-        </div>
-      `).join("");
+    listHtml += jiraTickets.map(t => {
+      const line = (t.summary || t.key || "—").trim();
+      return `<div class="project-row project-row-jira">
+          <a href="${t.url || "#"}" target="_blank" rel="noopener" class="project-client" style="text-decoration:none;color:inherit">${escapeHtml(line)}</a>
+        </div>`;
+    }).join("");
   }
   document.getElementById("project-list").innerHTML = listHtml
     || `<div class="empty-state">No projects yet. Click "+ Add Project" to start. Add Jira project keys in .env to see tickets in the pipeline.</div>`;

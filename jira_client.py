@@ -319,20 +319,27 @@ def is_oncall_ticket(key):
 
 
 # Jira status -> pipeline stage for project tickets (non-CS) in pipeline view.
+# To Do column must not be empty: map Jira "To Do" / "Open" to Config (To Do).
 # Unknown statuses default to Discovery.
 JIRA_STATUS_TO_STAGE = {
     "Ticket Grooming": "Discovery",
-    "To Do": "Discovery",
-    "Open": "Discovery",
     "Requirement gathering": "Discovery",
     "BLOCKED": "Discovery",
+    "To Do": "Config",
+    "Open": "Config",
     "Config": "Config",
     "Integration": "Integration",
+    "Work in progress": "Integration",
+    "In progress": "Integration",
+    "In Progress": "Integration",
     "Internal User Testing": "UAT",
     "IN REVIEW": "UAT",
     "UAT": "UAT",
     "Go-Live": "Go-Live",
+    "Customer testing": "Go-Live",
+    "Customer Testing": "Go-Live",
     "Hypercare": "Hypercare",
+    "Done": "Hypercare",
 }
 
 PIPELINE_STAGES = ["Discovery", "Config", "Integration", "UAT", "Go-Live", "Hypercare"]
