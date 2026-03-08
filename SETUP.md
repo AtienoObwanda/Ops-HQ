@@ -1,4 +1,4 @@
-# Ops Brain — Setup Guide
+# Ops HQ — Setup Guide
 # Read this top to bottom. Takes ~20 minutes.
 
 # ═══════════════════════════════════════════════════════
@@ -7,8 +7,17 @@
 
 # 1. Go to https://api.slack.com/apps
 # 2. Click "Create New App" → "From scratch"
-# 3. Name it: "Ops Brain" — pick your workspace
+# 3. Name it e.g. "Ops HQ" — pick your workspace
 # 4. Click Create
+
+# ── Rename the app (so DMs don’t say "CS Bot") ───────
+# Left sidebar → "Basic Information" → under "App Credentials"
+# Set "Display App Name" to e.g. "Ops HQ". Save.
+
+# ── Allow users to reply in DMs (fix "Sending messages to this app has been turned off") ─
+# Left sidebar → "App Home" (or "Messaging" in some workspaces)
+# Turn ON: "Allow users to send Slash commands and messages from the messages tab"
+# Without this, users cannot reply to the bot in DMs.
 
 # ── OAuth & Permissions ───────────────────────────────
 # Left sidebar → "OAuth & Permissions"

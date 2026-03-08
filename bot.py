@@ -1,6 +1,9 @@
 """
-CS Bot — Command Center for Atieno
+Ops HQ — Command Center (Slack bot)
 Phase 2: Jira integration, /assign, /clientupdate, /meetingprep, weekly digest
+
+Set BOT_DISPLAY_NAME in .env (default: Ops HQ). Rename the app in Slack:
+  api.slack.com → Your App → Basic Information → Display App Name.
 
 Env vars required:
     SLACK_BOT_TOKEN         xoxb-...
@@ -36,9 +39,12 @@ app = App(
 )
 
 COMMAND_CHANNEL = os.environ.get("CS_COMMAND_CHANNEL", "")
+BOT_DISPLAY_NAME = os.environ.get("BOT_DISPLAY_NAME", "Ops HQ").strip() or "Ops HQ"
 
 
-def _post_blocks(channel, blocks, text="CS Bot"):
+def _post_blocks(channel, blocks, text=None):
+    if text is None:
+        text = BOT_DISPLAY_NAME
     app.client.chat_postMessage(channel=channel, text=text, blocks=blocks)
 
 
@@ -258,7 +264,7 @@ def handle_clientupdate(ack, respond, command, body):
                 msg._section("*Draft — review before sending:*"),
                 msg._section(f"```{draft}```"),
                 msg._divider(),
-                msg._context("CS Bot · Edit as needed before sending"),
+                msg._context(f"{BOT_DISPLAY_NAME} · Edit as needed before sending"),
             ]
         )
     except Exception as e:
@@ -290,7 +296,7 @@ def handle_meetingprep(ack, respond, command, body):
                 msg._header(f"🎯 {label} — Talking Points"),
                 msg._section(prep),
                 msg._divider(),
-                msg._context("CS Bot · Customize before your meeting"),
+                msg._context(f"{BOT_DISPLAY_NAME} · Customize before your meeting"),
             ]
         )
     except Exception as e:
@@ -401,7 +407,7 @@ def handle_issues(ack, respond):
 @app.command("/help")
 def handle_help(ack, respond):
     ack()
-    respond(text="CS Bot Help", blocks=msg.help_message())
+    respond(text=f"{BOT_DISPLAY_NAME} Help", blocks=msg.help_message(BOT_DISPLAY_NAME))
 
 
 # ── BUTTON ACTIONS ────────────────────────────────────────────────────────────
@@ -527,7 +533,7 @@ def send_weekly_digest():
             msg._header("📊 Weekly Pattern Digest"),
             msg._section(digest),
             msg._divider(),
-            msg._context("Every Friday · CS Bot"),
+            msg._context(f"Every Friday · {BOT_DISPLAY_NAME}"),
         ], text="📊 Weekly Digest")
         print("✅ Weekly digest posted")
     except Exception as e:
@@ -546,6 +552,6 @@ if __name__ == "__main__":
     scheduler.start()
     print("⏰ Scheduler: briefs 9am · check-ins 4pm · digest Fridays 5pm")
 
-    print("🤖 CS Bot Phase 2 starting...")
+    print(f"🤖 {BOT_DISPLAY_NAME} Phase 2 starting...")
     handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
     handler.start()

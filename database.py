@@ -1,16 +1,16 @@
 """
-CS Bot - Database Layer
+Ops HQ - Database Layer
 SQLite, zero infra. Just a file.
 """
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime, timedelta
 
-# Use Railway volume path when set so the DB persists across deploys (otherwise each deploy = new container = empty disk)
+# DB path: OPS_HQ_DB or CS_BOT_DB env; default cs_bot.db (on Railway use volume path when no env set)
 _default_db = "cs_bot.db"
-if os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") and os.environ.get("CS_BOT_DB", _default_db) == _default_db:
+if os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") and not os.environ.get("OPS_HQ_DB") and not os.environ.get("CS_BOT_DB"):
     _default_db = os.path.join(os.environ["RAILWAY_VOLUME_MOUNT_PATH"], "cs_bot.db")
-DB_PATH = os.environ.get("CS_BOT_DB", _default_db)
+DB_PATH = os.environ.get("OPS_HQ_DB") or os.environ.get("CS_BOT_DB") or _default_db
 
 
 def get_conn():
@@ -406,6 +406,14 @@ def update_project(project_id, **kwargs):
         conn.execute(f"UPDATE projects SET {set_clause} WHERE id = ?", values)
 
 
+def delete_project(project_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM updates WHERE project_id = ?", (project_id,))
+        conn.execute("UPDATE issues SET project_id = NULL WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM checkins WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+
+
 # ── UPDATES ───────────────────────────────────────────────────────────────────
 
 def add_update(project_id, content, author_slack=None, author_name=None):
@@ -480,6 +488,35 @@ def resolve_issue(issue_id):
                WHERE id=?""",
             (issue_id,)
         )
+
+
+def update_issue(issue_id, **kwargs):
+    allowed = {"title", "category", "description", "project_id", "client_id"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [issue_id]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE issues SET {set_clause} WHERE id = ?", values)
+
+
+def delete_issue(issue_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM issues WHERE id = ?", (issue_id,))
+
+
+def get_issue(issue_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT i.*, COALESCE(c.name, p.client) as client
+               FROM issues i
+               LEFT JOIN projects p ON i.project_id = p.id
+               LEFT JOIN clients c ON i.client_id = c.id
+               WHERE i.id = ?""",
+            (issue_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 # ── CHECK-INS ─────────────────────────────────────────────────────────────────

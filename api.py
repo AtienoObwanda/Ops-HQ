@@ -170,6 +170,15 @@ def update_project(pid):
     return jsonify({"ok": True})
 
 
+@app.route("/api/projects/<int:pid>", methods=["DELETE"])
+@_require_auth(roles=["admin", "engineer"])
+def delete_project(pid):
+    if db.get_project(pid) is None:
+        return jsonify({"error": "Not found"}), 404
+    db.delete_project(pid)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/projects/<int:pid>/updates", methods=["POST"])
 @_require_auth(roles=["admin", "engineer"])
 def add_update(pid):
@@ -677,10 +686,38 @@ def create_issue():
     return jsonify({"id": iid}), 201
 
 
+@app.route("/api/issues/<int:iid>", methods=["GET"])
+@_require_auth()
+def get_issue(iid):
+    issue = db.get_issue(iid)
+    if not issue:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(issue)
+
+
+@app.route("/api/issues/<int:iid>", methods=["PATCH"])
+@_require_auth(roles=["admin", "engineer"])
+def update_issue(iid):
+    if db.get_issue(iid) is None:
+        return jsonify({"error": "Not found"}), 404
+    data = request.json or {}
+    db.update_issue(iid, **data)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/issues/<int:iid>/resolve", methods=["POST"])
 @_require_auth(roles=["admin"])
 def resolve_issue(iid):
     db.resolve_issue(iid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/issues/<int:iid>", methods=["DELETE"])
+@_require_auth(roles=["admin", "engineer"])
+def delete_issue(iid):
+    if db.get_issue(iid) is None:
+        return jsonify({"error": "Not found"}), 404
+    db.delete_issue(iid)
     return jsonify({"ok": True})
 
 
@@ -1231,9 +1268,17 @@ def team_workload():
             "oncall": jira.is_oncall_ticket(t.get("key") or ""),
         })
 
-    # Only assigned engineers (exclude Unassigned); sort by total work desc
-    assigned = [m for m in workload.values() if m["name"] != "Unassigned"]
-    return jsonify(sorted(assigned, key=lambda m: -(len(m["projects"]) + len(m["tickets"]))))
+    # Assigned first (by total work desc), Unassigned last — so page is never blank when grooming has tickets
+    def order(m):
+        total = len(m["projects"]) + len(m["tickets"])
+        return (m["name"] == "Unassigned", -total)
+    members = sorted(workload.values(), key=order)
+    total_projects = sum(len(m["projects"]) for m in members)
+    total_tickets = sum(len(m["tickets"]) for m in members)
+    return jsonify({
+        "members": members,
+        "totals": {"projects": total_projects, "tickets": total_tickets, "people": len(members)},
+    })
 
 
 @app.route("/api/jira/engineer-performance", methods=["GET"])

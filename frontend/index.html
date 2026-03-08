@@ -302,50 +302,81 @@
   }
 
   /* ── ONCALL SUMMARY CARD ── */
-  .oncall-summary-lead {
-    font-size: 14px;
-    color: var(--text);
-    font-weight: 500;
-    margin-bottom: 16px;
-    line-height: 1.4;
-  }
-  .oncall-summary-stats {
+  .oncall-summary-card .card-title { margin-bottom: 4px; }
+  .oncall-summary-hero {
     display: flex;
-    gap: 24px;
-    margin-bottom: 16px;
-    font-size: 12px;
+    align-items: baseline;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .oncall-summary-hero-total {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .oncall-summary-hero-meta {
+    font-size: 14px;
     color: var(--muted);
+    font-weight: 500;
   }
-  .oncall-summary-stats strong { color: var(--text); font-weight: 600; }
-  .oncall-summary-block {
-    margin-bottom: 12px;
+  .oncall-summary-hero-meta .unassigned { color: var(--warn); }
+  .oncall-summary-section {
+    margin-bottom: 20px;
   }
-  .oncall-summary-block:last-child { margin-bottom: 0; }
-  .oncall-summary-block-title {
-    font-size: 10px;
-    letter-spacing: 1.5px;
+  .oncall-summary-section:last-child { margin-bottom: 0; }
+  .oncall-summary-section-title {
+    font-size: 11px;
+    letter-spacing: 1px;
     text-transform: uppercase;
     color: var(--muted);
-    font-family: var(--mono);
-    margin-bottom: 6px;
+    font-weight: 600;
+    margin-bottom: 10px;
   }
-  .oncall-summary-block-content {
-    font-size: 13px;
-    color: var(--text);
-    line-height: 1.5;
-  }
-  .oncall-summary-block-content .jira-key { font-size: 12px; }
-  .oncall-status-list, .oncall-assignee-list {
+  .oncall-summary-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 16px;
-    list-style: none;
+    gap: 8px;
   }
-  .oncall-status-list li, .oncall-assignee-list li {
-    font-size: 12px;
+  .oncall-summary-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--bg);
+    font-size: 13px;
     color: var(--text);
   }
-  .oncall-status-list li span, .oncall-assignee-list li span { color: var(--muted); margin-right: 4px; }
+  .oncall-summary-pill .count {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .oncall-oldest {
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--bg);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .oncall-oldest-key {
+    display: inline-block;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .oncall-oldest-summary {
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .oncall-oldest-date {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
 
   /* ── METRICS ROW ── */
   .metrics {
@@ -473,6 +504,8 @@
     font-size: 10px;
   }
 
+  .pipeline-col-drop { min-height: 60px; transition: background 0.15s; }
+  .pipeline-col-drop.pipeline-drop-over { background: var(--accent); opacity: 0.12; border-radius: 8px; margin: 0 -4px; padding: 4px; }
   .pipeline-item {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -483,8 +516,11 @@
     font-weight: 600;
     cursor: pointer;
     transition: border-color 0.15s;
+    cursor: grab;
+    user-select: none;
   }
-
+  .pipeline-item:active { cursor: grabbing; }
+  .pipeline-item.dragging { opacity: 0.6; }
   .pipeline-item:hover { border-color: var(--accent); }
   .pipeline-item-jira { border-left: 3px solid var(--accent2); }
   .pipeline-item-owner { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
@@ -675,6 +711,12 @@
   }
   .workload-summary-chip strong { font-size: 13px; }
   .workload-summary-chip .chip-meta { color: var(--muted); margin-top: 2px; }
+  .workload-totals-line {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 12px;
+    font-family: var(--mono);
+  }
 
   /* ── JIRA ITEM ── */
   .jira-item {
@@ -744,7 +786,8 @@
   }
   .eisenhower-quadrant-title { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
   .eisenhower-quadrant-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; font-family: var(--mono); }
-  .eisenhower-tasks { display: flex; flex-direction: column; gap: 8px; }
+  .eisenhower-tasks { display: flex; flex-direction: column; gap: 8px; min-height: 44px; transition: background 0.15s; }
+  .eisenhower-tasks.eisenhower-drop-over { background: var(--accent); opacity: 0.15; border-radius: 8px; }
   .eisenhower-task {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -756,10 +799,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    cursor: grab;
+    user-select: none;
   }
+  .eisenhower-task:active { cursor: grabbing; }
+  .eisenhower-task.dragging { opacity: 0.6; }
   .eisenhower-task-title { font-weight: 600; flex: 1; min-width: 0; }
   .eisenhower-task-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); }
   .eisenhower-task-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .eisenhower-task-actions button, .eisenhower-task-actions select { pointer-events: auto; }
 
   .health-dot {
     width: 8px; height: 8px;
@@ -1035,22 +1083,22 @@
         <div class="eisenhower-quadrant" data-quadrant="urgent_important">
           <div class="eisenhower-quadrant-title">🔴 Urgent · Important</div>
           <div class="eisenhower-quadrant-sub">Do first</div>
-          <div id="eisenhower-urgent-important" class="eisenhower-tasks"></div>
+          <div id="eisenhower-urgent-important" class="eisenhower-tasks" data-quadrant="urgent_important" ondragover="eisenhowerDragOver(event)" ondrop="eisenhowerDrop(event)" ondragleave="eisenhowerDragLeave(event)"></div>
         </div>
         <div class="eisenhower-quadrant" data-quadrant="important_not_urgent">
           <div class="eisenhower-quadrant-title">🟢 Important · Not urgent</div>
           <div class="eisenhower-quadrant-sub">Schedule</div>
-          <div id="eisenhower-important-not-urgent" class="eisenhower-tasks"></div>
+          <div id="eisenhower-important-not-urgent" class="eisenhower-tasks" data-quadrant="important_not_urgent" ondragover="eisenhowerDragOver(event)" ondrop="eisenhowerDrop(event)" ondragleave="eisenhowerDragLeave(event)"></div>
         </div>
         <div class="eisenhower-quadrant" data-quadrant="urgent_not_important">
           <div class="eisenhower-quadrant-title">🟡 Urgent · Not important</div>
           <div class="eisenhower-quadrant-sub">Delegate</div>
-          <div id="eisenhower-urgent-not-important" class="eisenhower-tasks"></div>
+          <div id="eisenhower-urgent-not-important" class="eisenhower-tasks" data-quadrant="urgent_not_important" ondragover="eisenhowerDragOver(event)" ondrop="eisenhowerDrop(event)" ondragleave="eisenhowerDragLeave(event)"></div>
         </div>
         <div class="eisenhower-quadrant" data-quadrant="neither">
           <div class="eisenhower-quadrant-title">⚪ Neither</div>
           <div class="eisenhower-quadrant-sub">Eliminate / later</div>
-          <div id="eisenhower-neither" class="eisenhower-tasks"></div>
+          <div id="eisenhower-neither" class="eisenhower-tasks" data-quadrant="neither" ondragover="eisenhowerDragOver(event)" ondrop="eisenhowerDrop(event)" ondragleave="eisenhowerDragLeave(event)"></div>
         </div>
       </div>
     </div>
@@ -1223,9 +1271,15 @@
   <div class="modal client-detail-modal-large">
     <div class="modal-title" id="cd-name">Client</div>
     <div id="cd-content" class="cd-content-scroll"></div>
-    <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal('client-detail-modal')">Close</button>
-      <button class="btn-accent" id="cd-draft-btn" onclick="cdGenerateDraft()">Generate client update draft</button>
+    <div class="modal-actions" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" onclick="closeModal('client-detail-modal')">Close</button>
+        <button class="btn-accent" id="cd-draft-btn" onclick="cdGenerateDraft()">Generate client update draft</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn-sm" onclick="closeModal('client-detail-modal'); openEditClient(_currentClientId)">Edit client</button>
+        <button type="button" class="btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteClient(_currentClientId)">Delete client</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1235,15 +1289,32 @@
   <div class="modal" style="max-width:720px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column">
     <div class="modal-title" id="document-view-title">Document</div>
     <div id="document-view-content" style="flex:1;overflow-y:auto;white-space:pre-wrap;font-size:13px;font-family:var(--mono)"></div>
-    <div class="modal-actions" style="margin-top:12px">
-      <button class="btn-secondary" onclick="closeModal('document-view-modal')">Close</button>
+    <div id="document-view-edit" style="display:none;flex:1;overflow-y:auto;flex-direction:column;gap:12px">
+      <div class="form-field">
+        <label class="form-label">Title</label>
+        <input class="form-input" id="document-edit-title" placeholder="Document title" />
+      </div>
+      <div class="form-field" style="flex:1;min-height:200px">
+        <label class="form-label">Content</label>
+        <textarea class="form-textarea" id="document-edit-content" rows="14" style="min-height:280px;font-family:var(--mono);font-size:13px"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <button class="btn-secondary" onclick="closeModal('document-view-modal')">Close</button>
+        <button type="button" class="btn-sm" id="document-view-edit-btn" onclick="toggleDocumentEdit(true)">Edit</button>
+      </div>
+      <div id="document-view-save-actions" style="display:none">
+        <button class="btn-secondary" onclick="toggleDocumentEdit(false)">Cancel</button>
+        <button class="btn-accent" onclick="saveDocumentEdit()">Save</button>
+      </div>
     </div>
   </div>
 </div>
 
 <div class="modal-overlay" id="client-modal">
   <div class="modal" style="max-width:400px">
-    <div class="modal-title">Add client</div>
+    <div class="modal-title" id="client-modal-title">Add client</div>
     <div class="form-field">
       <label class="form-label">Client name</label>
       <input class="form-input" id="cm-name" placeholder="e.g. Equity Bank" />
@@ -1254,7 +1325,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('client-modal')">Cancel</button>
-      <button class="btn-accent" onclick="submitClient()">Add client</button>
+      <button class="btn-accent" id="client-submit-btn" onclick="submitClient()">Add client</button>
     </div>
   </div>
 </div>
@@ -1304,10 +1375,11 @@
   </div>
 </div>
 
-<!-- ISSUE MODAL -->
+<!-- ISSUE MODAL (add / edit) -->
 <div class="modal-overlay" id="issue-modal">
   <div class="modal">
-    <div class="modal-title">Log Issue</div>
+    <div class="modal-title" id="issue-modal-title">Log Issue</div>
+    <input type="hidden" id="im-issue-id" value="" />
     <div class="form-field">
       <label class="form-label">Client (optional)</label>
       <select class="form-select" id="im-client-select">
@@ -1335,7 +1407,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('issue-modal')">Cancel</button>
-      <button class="btn-accent" onclick="submitIssue()">Log Issue</button>
+      <button class="btn-accent" id="issue-submit-btn" onclick="submitIssue()">Log Issue</button>
     </div>
   </div>
 </div>
@@ -1392,9 +1464,12 @@
         </div>
       </div>
     </div>
-    <div class="modal-actions" style="margin-top:16px">
-      <button class="btn-secondary" onclick="closeModal('project-detail-modal')">Close</button>
-      <button class="btn-accent" onclick="submitProjectUpdate()">Post update</button>
+    <div class="modal-actions" style="margin-top:16px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" onclick="closeModal('project-detail-modal')">Close</button>
+        <button class="btn-accent" onclick="submitProjectUpdate()">Post update</button>
+      </div>
+      <button type="button" class="btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteProject(_currentProjectId)" title="Delete project">Delete project</button>
     </div>
   </div>
 </div>
@@ -1804,21 +1879,53 @@ async function loadClients() {
     : `<div class="empty-state">Add clients to monitor them here.</div>`;
 }
 
+let _editingClientId = null;
 function openAddClient() {
+  _editingClientId = null;
+  document.getElementById("client-modal-title").textContent = "Add client";
+  document.getElementById("client-submit-btn").textContent = "Add client";
   document.getElementById("cm-name").value = "";
   document.getElementById("cm-notes").value = "";
   document.getElementById("client-modal").classList.add("open");
 }
-
+async function openEditClient(cid) {
+  if (!cid) return;
+  const data = await api("GET", `/api/clients/${cid}`);
+  if (!data || !data.client) return;
+  _editingClientId = cid;
+  document.getElementById("client-modal-title").textContent = "Edit client";
+  document.getElementById("client-submit-btn").textContent = "Save";
+  document.getElementById("cm-name").value = data.client.name || "";
+  document.getElementById("cm-notes").value = data.client.notes || "";
+  document.getElementById("client-modal").classList.add("open");
+}
 async function submitClient() {
   const name = document.getElementById("cm-name").value.trim();
   if (!name) return;
-  await api("POST", "/api/clients", { name, notes: document.getElementById("cm-notes").value.trim() || null });
+  if (_editingClientId) {
+    await api("PATCH", `/api/clients/${_editingClientId}`, { name, notes: document.getElementById("cm-notes").value.trim() || null });
+    showToast("Client updated");
+  } else {
+    await api("POST", "/api/clients", { name, notes: document.getElementById("cm-notes").value.trim() || null });
+    showToast(`${name} added`);
+  }
   closeModal("client-modal");
-  showToast(`${name} added`);
+  _editingClientId = null;
+  document.getElementById("client-modal-title").textContent = "Add client";
+  document.getElementById("client-submit-btn").textContent = "Add client";
   loadClients();
   loadPipeline();
   loadAITools();
+}
+async function deleteClient(cid) {
+  if (!cid || !confirm("Delete this client? Projects and issues will be unlinked (not deleted).")) return;
+  const res = await api("DELETE", `/api/clients/${cid}`);
+  if (res && res.ok) {
+    closeModal("client-detail-modal");
+    _currentClientId = null;
+    showToast("Client deleted");
+    loadClients();
+  } else showToast("Failed to delete");
 }
 
 let _currentClientId = null;
@@ -1892,18 +1999,20 @@ async function loadPipeline() {
   projects.forEach(p => { if (byStage[p.stage]) byStage[p.stage].push(p); });
 
   document.getElementById("pipeline-board").innerHTML = stages.map(stage => `
-    <div class="pipeline-col">
+    <div class="pipeline-col" data-stage="${stage}">
       <div class="pipeline-col-title">
         ${STAGE_EMOJI[stage]} ${stageDisplay(stage)}
         <span class="pipeline-count">${byStage[stage].length}</span>
       </div>
-      ${byStage[stage].map(p => `
-        <div class="pipeline-item" onclick="openProjectDetail(${p.id})">
+      <div class="pipeline-col-drop" data-stage="${stage}" ondragover="pipelineDragOver(event)" ondrop="pipelineDrop(event)" ondragleave="pipelineDragLeave(event)">
+        ${byStage[stage].map(p => `
+        <div class="pipeline-item" draggable="true" data-project-id="${p.id}" data-stage="${escapeHtml(p.stage)}" ondragstart="pipelineDragStart(event, ${p.id})" ondragend="pipelineDragEnd(event)" onclick="if(!window._pipelineDragging) openProjectDetail(${p.id})">
           <div>${escapeHtml(p.client)}</div>
           <div class="pipeline-item-owner">${escapeHtml(p.owner_name || "—")}${p.recon_name ? " · Recon: " + escapeHtml(p.recon_name) : ""}</div>
           ${p.health !== "On Track" ? `<div style="margin-top:4px"><span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span></div>` : ""}
         </div>
-      `).join("")}
+        `).join("")}
+      </div>
     </div>
   `).join("");
 
@@ -1925,6 +2034,43 @@ async function loadPipeline() {
         </div>`;
       }).join("")
     : `<div class="empty-state">No projects yet. Click "+ Add Project" to start.</div>`;
+}
+
+function pipelineDragStart(ev, projectId) {
+  window._pipelineDragging = true;
+  ev.dataTransfer.setData("text/plain", String(projectId));
+  ev.dataTransfer.effectAllowed = "move";
+  ev.currentTarget.classList.add("dragging");
+}
+function pipelineDragEnd(ev) {
+  ev.currentTarget.classList.remove("dragging");
+  window._pipelineDragging = false;
+}
+function pipelineDragOver(ev) {
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = "move";
+  const zone = ev.target.closest(".pipeline-col-drop");
+  if (zone) zone.classList.add("pipeline-drop-over");
+}
+function pipelineDragLeave(ev) {
+  const zone = ev.target.closest(".pipeline-col-drop");
+  if (zone && !zone.contains(ev.relatedTarget)) zone.classList.remove("pipeline-drop-over");
+}
+async function pipelineDrop(ev) {
+  ev.preventDefault();
+  const zone = ev.target.closest(".pipeline-col-drop");
+  if (zone) zone.classList.remove("pipeline-drop-over");
+  const projectId = ev.dataTransfer.getData("text/plain");
+  const newStage = zone?.getAttribute("data-stage");
+  if (!projectId || !newStage) return;
+  const pid = parseInt(projectId, 10);
+  try {
+    await api("PATCH", `/api/projects/${pid}`, { stage: newStage });
+    showToast("Stage updated");
+    loadPipeline();
+  } catch (e) {
+    showToast(e.message || "Failed to update stage");
+  }
 }
 
 // ── TICKET GROOMING (Jira) ────────────────────────────────────────────────────
@@ -2062,23 +2208,26 @@ async function loadOncall() {
     const oldest = summary.oldest_ticket;
     const statusEntries = Object.entries(byStatus).sort((a, b) => b[1] - a[1]);
     const assigneeEntries = Object.entries(byAssignee).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    const lead = `${total} open oncall ticket${total !== 1 ? "s" : ""}${unassigned > 0 ? `, ${unassigned} unassigned.` : "."}`;
-    const statusList = statusEntries.map(([s, c]) => `<li><span>${escapeHtml(s)}:</span> ${c}</li>`).join("");
-    const assigneeList = assigneeEntries.map(([a, c]) => `<li><span>${escapeHtml(a)}:</span> ${c}</li>`).join("");
-    const oldestLine = oldest
-      ? `<a href="${oldest.url || "#"}" target="_blank" rel="noopener" class="jira-key">${escapeHtml(oldest.key)}</a> — ${escapeHtml((oldest.summary || "").slice(0, 60))}${(oldest.summary || "").length > 60 ? "…" : ""} (${(oldest.updated || "").slice(0, 10)})`
+    const statusPills = statusEntries.map(([s, c]) => `<span class="oncall-summary-pill"><span class="count">${c}</span> ${escapeHtml(s)}</span>`).join("");
+    const assigneePills = assigneeEntries.map(([a, c]) => `<span class="oncall-summary-pill"><span class="count">${c}</span> ${escapeHtml(a)}</span>`).join("");
+    const unassignedPill = unassigned > 0 ? `<span class="oncall-summary-pill"><span class="count">${unassigned}</span> unassigned</span>` : "";
+    const oldestBlock = oldest
+      ? `<div class="oncall-oldest">
+          <a href="${oldest.url || "#"}" target="_blank" rel="noopener" class="oncall-oldest-key jira-key">${escapeHtml(oldest.key || "")}</a>
+          <div class="oncall-oldest-summary">${escapeHtml((oldest.summary || "").slice(0, 80))}${(oldest.summary || "").length > 80 ? "…" : ""}</div>
+          <div class="oncall-oldest-date">Updated ${(oldest.updated || "").slice(0, 10)}</div>
+        </div>`
       : "";
     summaryEl.innerHTML = `
-      <div class="card">
+      <div class="card oncall-summary-card">
         <div class="card-title">Summary &amp; analysis</div>
-        <p class="oncall-summary-lead">${escapeHtml(lead)}</p>
-        <div class="oncall-summary-stats">
-          <span><strong>Total open</strong> ${total}</span>
-          <span><strong>Unassigned</strong> ${unassigned}</span>
+        <div class="oncall-summary-hero">
+          <span class="oncall-summary-hero-total">${total}</span>
+          <span class="oncall-summary-hero-meta">open ticket${total !== 1 ? "s" : ""}${unassigned > 0 ? ` · <span class="unassigned">${unassigned} unassigned</span>` : ""}</span>
         </div>
-        ${statusList ? `<div class="oncall-summary-block"><div class="oncall-summary-block-title">By status</div><ul class="oncall-status-list">${statusList}</ul></div>` : ""}
-        ${assigneeList ? `<div class="oncall-summary-block"><div class="oncall-summary-block-title">By assignee</div><ul class="oncall-assignee-list">${assigneeList}</ul></div>` : ""}
-        ${oldestLine ? `<div class="oncall-summary-block"><div class="oncall-summary-block-title">Oldest open</div><div class="oncall-summary-block-content">${oldestLine}</div></div>` : ""}
+        ${statusPills ? `<div class="oncall-summary-section"><div class="oncall-summary-section-title">By status</div><div class="oncall-summary-pills">${statusPills}</div></div>` : ""}
+        ${assigneePills || unassignedPill ? `<div class="oncall-summary-section"><div class="oncall-summary-section-title">By assignee</div><div class="oncall-summary-pills">${assigneePills}${unassignedPill}</div></div>` : ""}
+        ${oldestBlock ? `<div class="oncall-summary-section"><div class="oncall-summary-section-title">Oldest open</div>${oldestBlock}</div>` : ""}
       </div>`;
   } else {
     summaryEl.innerHTML = "";
@@ -2339,20 +2488,52 @@ async function loadEisenhower() {
     const list = byQuad[q] || [];
     el.innerHTML = list.length
       ? list.map(t => `
-          <div class="eisenhower-task">
-            <div class="eisenhower-task-title">${t.title}${t.jira_key ? ` <span class="eisenhower-task-meta">${t.jira_key}</span>` : ""}</div>
-            <div class="eisenhower-task-meta">${t.assignee_name || "—"}${t.due_date ? " · " + t.due_date : ""}</div>
+          <div class="eisenhower-task" draggable="true" data-task-id="${t.id}" ondragstart="eisenhowerDragStart(event, ${t.id})" ondragend="eisenhowerDragEnd(event)">
+            <div class="eisenhower-task-title">${escapeHtml(t.title)}${t.jira_key ? ` <span class="eisenhower-task-meta">${escapeHtml(t.jira_key)}</span>` : ""}</div>
+            <div class="eisenhower-task-meta">${escapeHtml(t.assignee_name || "—")}${t.due_date ? " · " + t.due_date : ""}</div>
             <div class="eisenhower-task-actions">
               <select class="form-select" style="width:auto;font-size:11px;padding:4px 8px" onchange="moveEisenhowerQuadrant(${t.id}, this.value)" title="Move to">
                 ${EISENHOWER_QUADRANTS.map(o => `<option value="${o}" ${o === t.quadrant ? "selected" : ""}>${o.replace(/_/g, " ")}</option>`).join("")}
               </select>
-              <button type="button" class="btn-sm" style="padding:4px 8px" onclick="openAddEisenhowerTask(${t.id})" title="Edit">Edit</button>
-              <button type="button" class="btn-sm" style="padding:4px 8px" onclick="deleteEisenhowerTask(${t.id})" title="Delete">✕</button>
+              <button type="button" class="btn-sm" style="padding:4px 8px" onclick="event.stopPropagation(); openAddEisenhowerTask(${t.id})" title="Edit">Edit</button>
+              <button type="button" class="btn-sm" style="padding:4px 8px" onclick="event.stopPropagation(); deleteEisenhowerTask(${t.id})" title="Delete">✕</button>
             </div>
           </div>
         `).join("")
       : `<div class="empty-state">No tasks</div>`;
   });
+}
+
+let _eisenhowerDragTaskId = null;
+function eisenhowerDragStart(ev, taskId) {
+  _eisenhowerDragTaskId = taskId;
+  ev.dataTransfer.setData("text/plain", String(taskId));
+  ev.dataTransfer.effectAllowed = "move";
+  ev.currentTarget.classList.add("dragging");
+}
+function eisenhowerDragEnd(ev) {
+  ev.currentTarget.classList.remove("dragging");
+  _eisenhowerDragTaskId = null;
+}
+function eisenhowerDragOver(ev) {
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = "move";
+  const zone = ev.target.closest(".eisenhower-tasks");
+  if (zone) zone.classList.add("eisenhower-drop-over");
+}
+function eisenhowerDragLeave(ev) {
+  const zone = ev.target.closest(".eisenhower-tasks");
+  if (zone && !zone.contains(ev.relatedTarget)) zone.classList.remove("eisenhower-drop-over");
+}
+function eisenhowerDrop(ev) {
+  ev.preventDefault();
+  const zone = ev.target.closest(".eisenhower-tasks");
+  if (zone) zone.classList.remove("eisenhower-drop-over");
+  const taskId = ev.dataTransfer.getData("text/plain");
+  const quadrant = zone?.getAttribute("data-quadrant");
+  if (taskId && quadrant) {
+    moveEisenhowerQuadrant(parseInt(taskId, 10), quadrant);
+  }
 }
 
 async function openAddEisenhowerTask(editId) {
@@ -2599,33 +2780,31 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
-// ── WORKLOAD (from grooming + DB projects, engineers mapped; Unassigned excluded) ──
+// ── WORKLOAD (from Ticket Grooming + Pipeline; summary, totals, analysis, breakdown) ──
 async function loadWorkload() {
-  const data = await api("GET", "/api/team/workload");
-  if (!data) return;
-  const hasAny = data.length && data.some(m => (m.projects && m.projects.length) || (m.tickets && m.tickets.length));
+  const raw = await api("GET", "/api/team/workload");
+  if (!raw) return;
+  const data = Array.isArray(raw) ? raw : (raw.members || []);
+  const totals = raw.totals || { projects: 0, tickets: 0, people: 0 };
+  const hasAny = totals.projects > 0 || totals.tickets > 0 || data.some(m => (m.projects && m.projects.length) || (m.tickets && m.tickets.length));
 
-  // Summary row at top
+  // Totals + Summary row at top (fed by Ticket Grooming + Pipeline)
   const summaryEl = document.getElementById("workload-summary");
-  if (data.length && hasAny) {
-    summaryEl.innerHTML = `
-      <div class="card-title">Summary</div>
-      <div class="workload-summary-row">
-        ${data.filter(m => (m.projects && m.projects.length) || (m.tickets && m.tickets.length)).map(member => {
-          const projects = member.projects || [];
-          const tickets = member.tickets || [];
-          const sub = [projects.length ? projects.length + " projects" : "", tickets.length ? tickets.length + " tickets" : ""].filter(Boolean).join(" · ");
-          return `<div class="workload-summary-chip">
-            <strong>${escapeHtml(member.name)}</strong>
-            <div class="chip-meta">${sub}${member.at_risk > 0 ? " · " + member.at_risk + " at risk" : ""}</div>
-          </div>`;
-        }).join("")}
-      </div>`;
-  } else {
-    summaryEl.innerHTML = "";
-  }
+  const totalLine = hasAny ? `<div class="workload-totals-line">${totals.projects} projects · ${totals.tickets} tickets · ${totals.people} ${totals.people === 1 ? "person" : "people"}</div>` : "";
+  const chipsHtml = data.filter(m => (m.projects && m.projects.length) || (m.tickets && m.tickets.length)).map(member => {
+    const projects = member.projects || [];
+    const tickets = member.tickets || [];
+    const sub = [projects.length ? projects.length + " projects" : "", tickets.length ? tickets.length + " tickets" : ""].filter(Boolean).join(" · ");
+    return `<div class="workload-summary-chip">
+      <strong>${escapeHtml(member.name)}</strong>
+      <div class="chip-meta">${sub}${member.at_risk > 0 ? " · " + member.at_risk + " at risk" : ""}</div>
+    </div>`;
+  }).join("");
+  summaryEl.innerHTML = hasAny
+    ? `<div class="card-title">Summary</div>${totalLine}<div class="workload-summary-row">${chipsHtml}</div>`
+    : "";
 
-  // Performance card: show and wire button (detailed analysis with 7d/30d/90d trends)
+  // Performance card: AI analysis on user work (7d/30d/90d trends)
   const perfCard = document.getElementById("workload-performance");
   const perfContent = document.getElementById("workload-performance-content");
   perfCard.style.display = "block";
@@ -2652,7 +2831,7 @@ async function loadWorkload() {
     perfContent.textContent = "Click \"Generate AI analysis\" for a detailed performance report with trends (7d, 30d, 90d closure rates and cycle time).";
   }
 
-  // Breakdown: engineer cards (assigned only; Unassigned not in API)
+  // Breakdown: cards per person (Unassigned last)
   document.getElementById("workload-list").innerHTML = hasAny
     ? data.map(member => {
         const projects = member.projects || [];
@@ -2691,7 +2870,7 @@ async function loadWorkload() {
         </div>
       `;
       }).filter(Boolean).join("")
-    : `<div class="empty-state">No team data yet. Assign owners to projects (Pipeline) or assignees to Jira tickets (Ticket Grooming).</div>`;
+    : `<div class="empty-state">No data yet. Add projects in Pipeline or ensure Ticket Grooming is configured and has tickets (Jira + JIRA_PROJECT_KEYS).</div>`;
 }
 
 // ── ISSUES ────────────────────────────────────────────────────────────────────
@@ -2718,12 +2897,17 @@ async function loadIssues() {
 
   document.getElementById("issue-list").innerHTML = data.issues.length
     ? data.issues.map(i => `
-        <div style="padding:10px 0;border-bottom:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-            <span style="font-size:13px;font-weight:600">${i.title}</span>
-            <span class="tag" style="background:${CAT_COLORS[i.category]||'var(--accent)'}22;color:${CAT_COLORS[i.category]||'var(--accent)'};border:1px solid ${CAT_COLORS[i.category]||'var(--accent)'}44;white-space:nowrap">${i.category}</span>
+        <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600">${escapeHtml(i.title)}</div>
+            ${i.client ? `<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px">${escapeHtml(i.client)}</div>` : ""}
           </div>
-          ${i.client ? `<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px">${i.client}</div>` : ""}
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            <span class="tag" style="background:${CAT_COLORS[i.category]||'var(--accent)'}22;color:${CAT_COLORS[i.category]||'var(--accent)'};border:1px solid ${CAT_COLORS[i.category]||'var(--accent)'}44;white-space:nowrap">${escapeHtml(i.category)}</span>
+            ${USER.role === "admin" ? `<button type="button" class="btn-sm" onclick="resolveIssue(${i.id})" title="Resolve">✓ Resolve</button>` : ""}
+            <button type="button" class="btn-sm" onclick="openEditIssue(${i.id})" title="Edit">Edit</button>
+            <button type="button" class="btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteIssue(${i.id})" title="Delete">Delete</button>
+          </div>
         </div>
       `).join("")
     : `<div class="empty-state">No open issues</div>`;
@@ -2887,14 +3071,53 @@ async function documentDownloadWithAuth(e, id) {
   showToast("Download started");
 }
 
+let _viewingDocumentId = null;
+
 async function viewDocument(id) {
   const d = await api("GET", "/api/documents/" + id);
   if (!d) return;
+  _viewingDocumentId = id;
+  toggleDocumentEdit(false);
   const modal = document.getElementById("document-view-modal");
   if (!modal) return;
   document.getElementById("document-view-title").textContent = d.title || "Document";
   document.getElementById("document-view-content").textContent = d.content || "";
   document.getElementById("document-view-modal").classList.add("open");
+}
+
+function toggleDocumentEdit(showEdit) {
+  const viewEl = document.getElementById("document-view-content");
+  const editEl = document.getElementById("document-view-edit");
+  const editBtn = document.getElementById("document-view-edit-btn");
+  const saveActions = document.getElementById("document-view-save-actions");
+  if (showEdit && _viewingDocumentId != null) {
+    const titleEl = document.getElementById("document-view-title");
+    document.getElementById("document-edit-title").value = titleEl.textContent || "";
+    document.getElementById("document-edit-content").value = document.getElementById("document-view-content").textContent || "";
+    viewEl.style.display = "none";
+    editEl.style.display = "flex";
+    if (editBtn) editBtn.style.display = "none";
+    if (saveActions) saveActions.style.display = "flex";
+  } else {
+    viewEl.style.display = "";
+    editEl.style.display = "none";
+    if (editBtn) editBtn.style.display = "";
+    if (saveActions) saveActions.style.display = "none";
+  }
+}
+
+async function saveDocumentEdit() {
+  if (_viewingDocumentId == null) return;
+  const title = document.getElementById("document-edit-title").value?.trim() || "";
+  const content = document.getElementById("document-edit-content").value ?? "";
+  const r = await api("PATCH", "/api/documents/" + _viewingDocumentId, { title, content });
+  if (r && r.error) { showToast(r.error); return; }
+  if (!r || !r.ok) { showToast("Update failed"); return; }
+  showToast("Document updated");
+  toggleDocumentEdit(false);
+  document.getElementById("document-view-title").textContent = title || "Document";
+  document.getElementById("document-view-content").textContent = content;
+  if (typeof loadDocuments === "function") loadDocuments();
 }
 
 async function copyDocumentContent(id) {
@@ -2960,6 +3183,30 @@ async function openAddProject() {
 }
 
 function openAddIssue() {
+  document.getElementById("issue-modal-title").textContent = "Log Issue";
+  document.getElementById("issue-submit-btn").textContent = "Log Issue";
+  document.getElementById("im-issue-id").value = "";
+  document.getElementById("im-title").value = "";
+  document.getElementById("im-desc").value = "";
+  document.getElementById("im-category").selectedIndex = 0;
+  const sel = document.getElementById("im-client-select");
+  if (sel) sel.value = "";
+  document.getElementById("issue-modal").classList.add("open");
+}
+async function openEditIssue(iid) {
+  const i = await api("GET", `/api/issues/${iid}`);
+  if (!i) return;
+  document.getElementById("issue-modal-title").textContent = "Edit issue";
+  document.getElementById("issue-submit-btn").textContent = "Save";
+  document.getElementById("im-issue-id").value = i.id;
+  document.getElementById("im-title").value = i.title || "";
+  document.getElementById("im-desc").value = i.description || "";
+  const catSel = document.getElementById("im-category");
+  for (let o = 0; o < catSel.options.length; o++) {
+    if (catSel.options[o].value === (i.category || "")) { catSel.selectedIndex = o; break; }
+  }
+  const clientSel = document.getElementById("im-client-select");
+  if (clientSel && i.client_id) clientSel.value = i.client_id;
   document.getElementById("issue-modal").classList.add("open");
 }
 
@@ -2991,15 +3238,29 @@ async function submitIssue() {
   const title = document.getElementById("im-title").value.trim();
   if (!title) return;
   const clientId = document.getElementById("im-client-select")?.value || null;
-  await api("POST", "/api/issues", {
-    title,
-    category:    document.getElementById("im-category").value,
-    description: document.getElementById("im-desc").value,
-    client_id:   clientId || null,
-  });
+  const iid = document.getElementById("im-issue-id").value;
+  const payload = { title, category: document.getElementById("im-category").value, description: document.getElementById("im-desc").value, client_id: clientId || null };
+  if (iid) {
+    await api("PATCH", `/api/issues/${iid}`, payload);
+    showToast("Issue updated");
+  } else {
+    await api("POST", "/api/issues", payload);
+    showToast("Issue logged");
+  }
   closeModal("issue-modal");
-  showToast("Issue logged");
   loadIssues();
+}
+async function resolveIssue(iid) {
+  if (!confirm("Mark this issue as resolved?")) return;
+  await api("POST", `/api/issues/${iid}/resolve`);
+  showToast("Issue resolved");
+  loadIssues();
+}
+async function deleteIssue(iid) {
+  if (!confirm("Delete this issue?")) return;
+  const res = await api("DELETE", `/api/issues/${iid}`);
+  if (res && res.ok) { showToast("Issue deleted"); loadIssues(); }
+  else showToast("Failed to delete");
 }
 
 // Close modals on overlay click
@@ -3114,6 +3375,19 @@ async function saveScopeUatEdit() {
   showToast("Saved");
   closeModal("scope-uat-edit-modal");
   openProjectDetail(_currentProjectId);
+}
+
+async function deleteProject(pid) {
+  if (!pid || !confirm("Delete this project? Updates and links will be removed.")) return;
+  const res = await api("DELETE", `/api/projects/${pid}`);
+  if (res && res.ok) {
+    closeModal("project-detail-modal");
+    _currentProjectId = null;
+    showToast("Project deleted");
+    loadPipeline();
+    if (document.getElementById("page-pipeline").classList.contains("active")) { /* already on pipeline */ }
+    else nav("pipeline");
+  } else showToast("Failed to delete");
 }
 
 async function loadScopeUat() {
