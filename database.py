@@ -159,6 +159,27 @@ def init_db():
                 health      TEXT NOT NULL,
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS sales_intake (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_name       TEXT NOT NULL,
+                source_sales      TEXT,
+                intake_date       TEXT NOT NULL DEFAULT (date('now')),
+                expected_go_live  TEXT,
+                key_commitments   TEXT,
+                notes            TEXT,
+                client_id         INTEGER REFERENCES clients(id),
+                created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS case_studies (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                situation   TEXT,
+                action      TEXT,
+                result      TEXT,
+                date        TEXT NOT NULL DEFAULT (date('now')),
+                context     TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
     print(f"✅ DB initialised at {DB_PATH}")
 
@@ -715,6 +736,102 @@ def add_reflection(date=None, wins=None, blockers=None, lessons=None):
             (when, (wins or "").strip() or None, (blockers or "").strip() or None, (lessons or "").strip() or None),
         )
         return cur.lastrowid
+
+
+# ── SALES INTAKE (new deals at source) ─────────────────────────────────────────
+
+def list_sales_intakes(limit=100):
+    """List sales intakes, newest first."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT si.*, c.name as client_name_linked FROM sales_intake si
+               LEFT JOIN clients c ON si.client_id = c.id
+               ORDER BY si.created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
+
+def add_sales_intake(client_name, source_sales=None, intake_date=None, expected_go_live=None, key_commitments=None, notes=None, client_id=None):
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO sales_intake (client_name, source_sales, intake_date, expected_go_live, key_commitments, notes, client_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                (client_name or "").strip() or "Unnamed",
+                (source_sales or "").strip() or None,
+                (intake_date or datetime.utcnow().strftime("%Y-%m-%d"))[:10],
+                (expected_go_live or "").strip() or None,
+                (key_commitments or "").strip() or None,
+                (notes or "").strip() or None,
+                client_id,
+            ),
+        )
+        return cur.lastrowid
+
+
+def get_sales_intake(sid):
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM sales_intake WHERE id = ?", (sid,)
+        ).fetchone()
+
+
+def update_sales_intake(sid, **kwargs):
+    allowed = {"client_name", "source_sales", "intake_date", "expected_go_live", "key_commitments", "notes", "client_id"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [sid]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE sales_intake SET {set_clause} WHERE id = ?", values)
+
+
+def delete_sales_intake(sid):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM sales_intake WHERE id = ?", (sid,))
+
+
+# ── CASE STUDIES (reflection / SA promotion) ───────────────────────────────────
+
+def list_case_studies(limit=50):
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM case_studies ORDER BY date DESC, created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+
+def add_case_study(title, situation=None, action=None, result=None, date=None, context=None):
+    with get_conn() as conn:
+        dt = (date or datetime.utcnow().strftime("%Y-%m-%d"))[:10]
+        cur = conn.execute(
+            """INSERT INTO case_studies (title, situation, action, result, date, context)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ((title or "").strip() or "Untitled", (situation or "").strip() or None, (action or "").strip() or None, (result or "").strip() or None, dt, (context or "").strip() or None),
+        )
+        return cur.lastrowid
+
+
+def get_case_study(cid):
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM case_studies WHERE id = ?", (cid,)).fetchone()
+
+
+def update_case_study(cid, **kwargs):
+    allowed = {"title", "situation", "action", "result", "date", "context"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [cid]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE case_studies SET {set_clause} WHERE id = ?", values)
+
+
+def delete_case_study(cid):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM case_studies WHERE id = ?", (cid,))
 
 
 def monthly_summary(days=30):

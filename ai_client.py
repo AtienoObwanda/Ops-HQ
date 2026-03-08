@@ -6,6 +6,7 @@ Env vars needed:
     ANTHROPIC_API_KEY   your-anthropic-api-key
 """
 import os
+import re
 import json
 import requests
 
@@ -38,6 +39,35 @@ def _call(system_prompt, user_content, max_tokens=800):
     resp.raise_for_status()
     data = resp.json()
     return data["content"][0]["text"].strip()
+
+
+def _clean_document_text(text):
+    """
+    Normalize AI-generated document text: fix invalid bullets, typos, malformed optional text, trailing junk.
+    """
+    if not text or not isinstance(text, str):
+        return text or ""
+    lines = text.split("\n")
+    out = []
+    for line in lines:
+        # Bullets: replace leading "? " or "? **" with "- " / "- **"
+        stripped = line.lstrip()
+        if stripped.startswith("? ") or stripped.startswith("?**"):
+            indent = line[: len(line) - len(stripped)]
+            line = indent + "- " + stripped[2:].lstrip()
+        elif re.match(r"^\s*\?\s+\*\*", line):
+            line = re.sub(r"^(\s*)\?\s+(\*\*)", r"\1- \2", line)
+        # Malformed optional: "*/optional)" or "** */optional)" -> "(optional)"
+        line = re.sub(r"\*+/?\s*optional\s*\)", "(optional)", line, flags=re.IGNORECASE)
+        line = re.sub(r"\*\s*/\s*\(?optional\)?", "(optional)", line, flags=re.IGNORECASE)
+        out.append(line)
+    # Trim trailing blank lines and lines that are only dashes
+    while out and (not out[-1].strip() or re.match(r"^[\s\-]+$", out[-1])):
+        out.pop()
+    result = "\n".join(out)
+    # Common typos
+    result = re.sub(r"\bIntergration\b", "Integration", result, flags=re.IGNORECASE)
+    return result.strip()
 
 
 # ── CLIENT UPDATE EMAIL ───────────────────────────────────────────────────────
@@ -202,6 +232,60 @@ BRAIN DUMPS (EOD reflections — integrate these into the narrative):
 Write the monthly report now."""
 
     return _call(system, user, max_tokens=800)
+
+
+# ── WEEKLY COO REPORT (leadership one-pager) ───────────────────────────────────
+
+def generate_coo_report(weekly_data):
+    """
+    Generate a narrative Weekly COO Report from structured data.
+    For the most visible leadership artifact: concise, scannable, one page.
+    """
+    summary = weekly_data.get("summary", {})
+    by_stage = weekly_data.get("pipeline_by_stage", {})
+    at_risk = weekly_data.get("at_risk", [])
+    issue_patterns = weekly_data.get("issue_patterns", [])
+    risk_heat = weekly_data.get("risk_heat", [])
+    reflections = weekly_data.get("reflections_this_week", [])
+
+    stage_lines = []
+    for stage in ["Discovery", "Config", "Integration", "UAT", "Go-Live", "Hypercare"]:
+        clients = by_stage.get(stage, [])
+        if clients:
+            stage_lines.append(f"{stage}: {', '.join(clients)}")
+    pipeline_text = "\n".join(stage_lines) if stage_lines else "No active projects."
+    risk_lines = "\n".join([f"- {p.get('client')} ({p.get('stage')}): {p.get('notes') or '—'}" for p in at_risk]) if at_risk else "None."
+    issue_lines = "\n".join([f"- {r.get('category')}: {r.get('open_count')} open, {r.get('count')} total" for r in issue_patterns]) if issue_patterns else "None."
+    heat_lines = "\n".join([f"- {p.get('client')} (score {p.get('risk_score')}, {p.get('risk_level')})" for p in risk_heat[:5]]) if risk_heat else "None."
+    refl_lines = "\n".join([f"- {r.get('date')}: wins={r.get('wins') or '—'} | blockers={r.get('blockers') or '—'} | lessons={r.get('lessons') or '—'}" for r in reflections]) if reflections else "None."
+
+    system = """You are a delivery/CS lead writing the Weekly COO Report for leadership.
+Write a concise, scannable one-pager. Use the data provided exactly — no invention.
+Structure: 1) One-paragraph executive summary (headline numbers + top risks). 2) Pipeline by stage (who is where). 3) Risks & blockers (who needs attention). 4) Recurring issues (patterns). 5) Proactive risk heat (projects to watch before they're flagged). 6) Week in review (reflections / wins and blockers).
+Tone: factual, confident. Keep under 350 words. This is the most visible artifact of delivery leadership."""
+
+    user = f"""WEEKLY COO REPORT DATA
+
+Summary: {summary.get('active')} active, {summary.get('at_risk')} at risk, {summary.get('completed')} completed this cycle.
+
+Pipeline by stage:
+{pipeline_text}
+
+Risks & blockers:
+{risk_lines}
+
+Recurring issues (category: open / total):
+{issue_lines}
+
+Proactive risk heat (watch list):
+{heat_lines}
+
+Reflections this week (wins, blockers, lessons):
+{refl_lines}
+
+Write the weekly COO report now."""
+
+    return _call(system, user, max_tokens=600)
 
 
 # ── MEETING PREP ──────────────────────────────────────────────────────────────
@@ -403,7 +487,8 @@ Delivery / Project Scope (use this to derive the signoff content):
 
 Generate the UAT signoff document now."""
 
-    return _call(system, user, max_tokens=600)
+    raw = _call(system, user, max_tokens=600)
+    return _clean_document_text(raw)
 
 
 # ── ON-DEMAND ASK (any info from cockpit) ─────────────────────────────────────
@@ -475,6 +560,7 @@ Document consistency (apply to all output):
 - No placeholder text like [TBD] or [Insert X] unless the template explicitly allows it; infer from context or write "To be confirmed" where needed.
 - Start with a document title line; include version or date where the template calls for it.
 - If a client name is provided for the document, the first line (document title) MUST include the client name (e.g. "PRD — Acme Corp" or "Technical specification — Acme Corp").
+- Use hyphen-minus for list bullets (e.g. "- Item"), not question marks. Spell "Integration" correctly. For optional fields write "(optional)" in parentheses only.
 """
 
 DOCUMENT_TEMPLATES = {
@@ -577,4 +663,5 @@ def generate_document_from_template(template_id, tickets_text, context, client_n
     if not parts:
         parts.append("--- CONTEXT ---\nNo tickets or context provided. Generate a concise placeholder document following the template structure so the user can replace with real content.")
     user = "\n\n".join(parts) + "\n\nGenerate the document now."
-    return _call(system, user, max_tokens=1200)
+    raw = _call(system, user, max_tokens=1200)
+    return _clean_document_text(raw)

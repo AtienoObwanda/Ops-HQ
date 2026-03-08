@@ -359,17 +359,134 @@ def client_report(cid):
     client = db.get_client(cid)
     if not client:
         return jsonify({"error": "Not found"}), 404
-    projects = db.get_projects_for_client(cid)
-    issues = db.get_issues_for_client(cid)
+    projects = [dict(p) for p in db.get_projects_for_client(cid)]
+    issues = [dict(i) for i in db.get_issues_for_client(cid)]
     open_issues = [i for i in issues if i.get("status") == "open"]
     resolved = [i for i in issues if i.get("resolved_at")]
     return jsonify({
         "client": dict(client),
-        "projects": [dict(p) for p in projects],
-        "issues": [dict(i) for i in issues],
+        "projects": projects,
+        "issues": issues,
         "open_count": len(open_issues),
         "resolved_count": len(resolved),
     })
+
+
+# ── SALES INTAKE (new deals at source) ─────────────────────────────────────────
+
+@app.route("/api/sales-intake", methods=["GET"])
+@_require_auth()
+def list_sales_intake():
+    limit = request.args.get("limit", 100, type=int)
+    rows = db.list_sales_intakes(limit=limit)
+    return jsonify({"items": [dict(r) for r in rows]})
+
+
+@app.route("/api/sales-intake", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def create_sales_intake():
+    data = request.get_json() or {}
+    client_name = data.get("client_name", "").strip() or "Unnamed"
+    sid = db.add_sales_intake(
+        client_name=client_name,
+        source_sales=data.get("source_sales"),
+        intake_date=data.get("intake_date"),
+        expected_go_live=data.get("expected_go_live"),
+        key_commitments=data.get("key_commitments"),
+        notes=data.get("notes"),
+        client_id=data.get("client_id"),
+    )
+    return jsonify({"id": sid, "ok": True})
+
+
+@app.route("/api/sales-intake/<int:sid>", methods=["GET"])
+@_require_auth()
+def get_sales_intake(sid):
+    row = db.get_sales_intake(sid)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/sales-intake/<int:sid>", methods=["PATCH"])
+@_require_auth(roles=["admin", "engineer"])
+def update_sales_intake(sid):
+    row = db.get_sales_intake(sid)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json() or {}
+    db.update_sales_intake(sid, **{k: v for k, v in data.items() if k in (
+        "client_name", "source_sales", "intake_date", "expected_go_live", "key_commitments", "notes", "client_id"
+    )})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/sales-intake/<int:sid>", methods=["DELETE"])
+@_require_auth(roles=["admin", "engineer"])
+def delete_sales_intake(sid):
+    row = db.get_sales_intake(sid)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    db.delete_sales_intake(sid)
+    return jsonify({"ok": True})
+
+
+# ── CASE STUDIES (reflection / SA promotion) ────────────────────────────────────
+
+@app.route("/api/case-studies", methods=["GET"])
+@_require_auth()
+def list_case_studies():
+    limit = request.args.get("limit", 50, type=int)
+    rows = db.list_case_studies(limit=limit)
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/case-studies", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def create_case_study():
+    data = request.get_json() or {}
+    title = (data.get("title") or "").strip() or "Untitled"
+    cid = db.add_case_study(
+        title=title,
+        situation=data.get("situation"),
+        action=data.get("action"),
+        result=data.get("result"),
+        date=data.get("date"),
+        context=data.get("context"),
+    )
+    return jsonify({"id": cid, "ok": True})
+
+
+@app.route("/api/case-studies/<int:cid>", methods=["GET"])
+@_require_auth()
+def get_case_study(cid):
+    row = db.get_case_study(cid)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/case-studies/<int:cid>", methods=["PATCH"])
+@_require_auth(roles=["admin", "engineer"])
+def update_case_study(cid):
+    row = db.get_case_study(cid)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json() or {}
+    db.update_case_study(cid, **{k: v for k, v in data.items() if k in (
+        "title", "situation", "action", "result", "date", "context"
+    )})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/case-studies/<int:cid>", methods=["DELETE"])
+@_require_auth(roles=["admin", "engineer"])
+def delete_case_study(cid):
+    row = db.get_case_study(cid)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    db.delete_case_study(cid)
+    return jsonify({"ok": True})
 
 
 # ── GO-LIVE RISK SCORING (proactive) ──────────────────────────────────────────
@@ -878,8 +995,8 @@ def ai_client_update_by_client(cid):
     client = db.get_client(cid)
     if not client:
         return jsonify({"error": "Not found"}), 404
-    projects = db.get_projects_for_client(cid)
-    issues = db.get_issues_for_client(cid)
+    projects = [dict(p) for p in db.get_projects_for_client(cid)]
+    issues = [dict(i) for i in db.get_issues_for_client(cid)]
     open_issues = [i for i in issues if i.get("status") == "open"]
     if not projects:
         return jsonify({"error": "No projects linked to this client"}), 400
@@ -941,13 +1058,14 @@ def ai_monthly_report():
 
 def _cockpit_context():
     """Build a text snapshot of cockpit data for on-demand AI prompts."""
-    projects = db.all_projects(exclude_done=False)
-    clients = db.all_clients()
-    open_issues = db.open_issues(limit=50)
-    reflections = db.reflections_since(days=14)
+    # sqlite3.Row has no .get(); convert to dict for consistent access
+    projects = [dict(p) for p in db.all_projects(exclude_done=False)]
+    clients = [dict(c) for c in db.all_clients()]
+    open_issues = [dict(i) for i in db.open_issues(limit=50)]
+    reflections = [dict(r) for r in db.reflections_since(days=14)]
     monthly = db.monthly_summary(days=30)
-    at_risk = db.at_risk_projects()
-    stale = db.stale_projects(hours=48)
+    at_risk = [dict(p) for p in db.at_risk_projects()]
+    stale = [dict(p) for p in db.stale_projects(hours=48)]
     lines = []
     lines.append("PROJECTS (client, name, stage, health, owner):")
     for p in projects[:60]:
@@ -1057,7 +1175,7 @@ def ai_document():
         if data.get("client_id") is not None:
             c = db.get_client(data["client_id"])
             if c:
-                client_name = c.get("name") or ""
+                client_name = dict(c).get("name") or ""
         tickets_text = ""
         if jira_keys:
             try:
@@ -1314,6 +1432,63 @@ def ai_product_scope():
             db.update_product_escalation(int(escalation_id), drafted_scope=scope)
             out["escalation_id"] = int(escalation_id)
         return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── WEEKLY COO REPORT (leadership artifact) ────────────────────────────────────
+
+def _weekly_coo_report_data():
+    """Build structured data for Weekly COO Report (used by GET and AI narrative)."""
+    all_projects = db.all_projects(exclude_done=False)
+    at_risk = db.at_risk_projects()
+    issues = db.issue_patterns()
+    reflections = db.reflections_this_week()
+    open_issues_list = db.open_issues(limit=200)
+    projects_dicts = [dict(p) for p in all_projects]
+    risk_scores = _compute_risk_scores(projects_dicts, [dict(i) for i in open_issues_list])
+    for p in projects_dicts:
+        r = risk_scores.get(p["id"], {})
+        p["risk_score"] = r.get("risk_score", 0)
+        p["risk_level"] = r.get("risk_level", "low")
+    active = [p for p in projects_dicts if p.get("stage") != "Done"]
+    risk_heat = sorted(
+        [p for p in active if (p.get("risk_score") or 0) > 0],
+        key=lambda x: (-x.get("risk_score", 0), x.get("client", "")),
+    )[:10]
+    by_stage = {}
+    for p in active:
+        by_stage.setdefault(p.get("stage"), []).append(p.get("client"))
+    return {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "summary": {
+            "active": len(active),
+            "at_risk": len(at_risk),
+            "completed": len(projects_dicts) - len(active),
+        },
+        "pipeline_by_stage": by_stage,
+        "at_risk": [dict(p) for p in at_risk],
+        "issue_patterns": [dict(r) for r in issues],
+        "risk_heat": risk_heat,
+        "reflections_this_week": [dict(r) for r in reflections],
+    }
+
+
+@app.route("/api/reports/weekly-coo", methods=["GET"])
+@_require_auth()
+def get_weekly_coo_report():
+    """Structured data for the Weekly COO Report: summary, pipeline, risks, issues, risk heat, reflections."""
+    return jsonify(_weekly_coo_report_data())
+
+
+@app.route("/api/ai/coo-report", methods=["POST"])
+@_require_auth(roles=["admin"])
+def ai_coo_report():
+    """Generate narrative Weekly COO Report (one-pager for leadership)."""
+    try:
+        data = _weekly_coo_report_data()
+        narrative = ai.generate_coo_report(data)
+        return jsonify({"report": narrative})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

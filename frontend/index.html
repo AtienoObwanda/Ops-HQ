@@ -891,6 +891,9 @@
       <div class="sidebar-logo-tag">CS Ops</div>
       <div class="sidebar-logo-name">Command<br>Center</div>
     </div>
+    <div class="nav-item" onclick="nav('cooreport')" id="nav-cooreport" title="Weekly COO Report">📊 COO Report</div>
+    <div class="nav-item" onclick="nav('salesintake')" id="nav-salesintake" title="Sales intake">📥 Sales intake</div>
+    <div class="nav-item" onclick="nav('casestudies')" id="nav-casestudies" title="Case studies for SA promotion">📚 Case studies</div>
     <div class="nav-item active" onclick="nav('brief')" id="nav-brief">
       <span class="nav-icon">☀️</span> Morning Brief
     </div>
@@ -1000,6 +1003,56 @@
             <div id="brief-pipeline"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- WEEKLY COO REPORT -->
+    <div class="page" id="page-cooreport">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Weekly COO Report</div>
+          <div class="page-sub">Your most visible leadership artifact. One place to build and export — no more untracked time.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-sm accent" id="coo-generate-btn" onclick="generateCooReportNarrative()">Generate narrative</button>
+          <button class="btn-sm" id="coo-pdf-btn" onclick="downloadCooReportPdf()">Download PDF</button>
+          <button class="btn-sm" onclick="loadCooReport()">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="coo-report-content"></div>
+      <div class="card" id="coo-narrative-card" style="margin-top:16px;display:none">
+        <div class="card-title">Narrative (one-pager)</div>
+        <div id="coo-narrative" style="white-space:pre-wrap;font-size:13px;line-height:1.5"></div>
+      </div>
+    </div>
+
+    <!-- SALES INTAKE (new deals at source) -->
+    <div class="page" id="page-salesintake">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Sales intake</div>
+          <div class="page-sub">Capture new deals at source. Stops the knowledge gap before it starts.</div>
+        </div>
+        <button class="btn-sm accent" onclick="openAddSalesIntake()">+ Add intake</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Intakes</div>
+        <div id="sales-intake-list"></div>
+      </div>
+    </div>
+
+    <!-- CASE STUDIES (reflection / SA promotion) -->
+    <div class="page" id="page-casestudies">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Case studies</div>
+          <div class="page-sub">STAR-style reflections for SA promotion. Situation, Action, Result — one place so you never lose a win.</div>
+        </div>
+        <button class="btn-sm accent" onclick="openAddCaseStudy()">+ Add case study</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Case studies</div>
+        <div id="case-studies-list"></div>
       </div>
     </div>
 
@@ -1372,6 +1425,76 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="sales-intake-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title" id="sales-intake-modal-title">Add intake</div>
+    <div class="form-field">
+      <label class="form-label">Client name</label>
+      <input class="form-input" id="si-client-name" placeholder="e.g. Acme Corp" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Source / sales contact</label>
+      <input class="form-input" id="si-source-sales" placeholder="Who brought the deal in" />
+    </div>
+    <div class="form-field" style="display:flex;gap:12px">
+      <div style="flex:1">
+        <label class="form-label">Intake date</label>
+        <input type="date" class="form-input" id="si-intake-date" />
+      </div>
+      <div style="flex:1">
+        <label class="form-label">Expected go-live</label>
+        <input class="form-input" id="si-expected-go-live" placeholder="e.g. Q2 2026" />
+      </div>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Key commitments</label>
+      <textarea class="form-textarea" id="si-key-commitments" rows="2" placeholder="Scope, timeline, success criteria…"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Notes</label>
+      <textarea class="form-textarea" id="si-notes" rows="2" placeholder="Extra context"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('sales-intake-modal')">Cancel</button>
+      <button class="btn-accent" id="sales-intake-submit-btn" onclick="submitSalesIntake()">Add intake</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="case-study-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title" id="case-study-modal-title">Add case study</div>
+    <div class="form-field">
+      <label class="form-label">Title</label>
+      <input class="form-input" id="cs-title" placeholder="e.g. Reduced go-live risk for Acme" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Situation</label>
+      <textarea class="form-textarea" id="cs-situation" rows="2" placeholder="What was the context?"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Action</label>
+      <textarea class="form-textarea" id="cs-action" rows="2" placeholder="What did you do?"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Result</label>
+      <textarea class="form-textarea" id="cs-result" rows="2" placeholder="Outcome / impact"></textarea>
+    </div>
+    <div class="form-field">
+      <label class="form-label">Date</label>
+      <input type="date" class="form-input" id="cs-date" />
+    </div>
+    <div class="form-field">
+      <label class="form-label">Context (optional)</label>
+      <input class="form-input" id="cs-context" placeholder="Client, project, or tag" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('case-study-modal')">Cancel</button>
+      <button class="btn-accent" id="case-study-submit-btn" onclick="submitCaseStudy()">Add case study</button>
+    </div>
+  </div>
+</div>
+
 <!-- PROJECT MODAL -->
 <div class="modal-overlay" id="project-modal">
   <div class="modal">
@@ -1737,6 +1860,9 @@ function nav(page) {
   document.getElementById(`nav-${page}`).classList.add("active");
   const loaders = {
     brief:    loadBrief,
+    cooreport: loadCooReport,
+    salesintake: loadSalesIntake,
+    casestudies: loadCaseStudies,
     pipeline: loadPipeline,
     clients:  loadClients,
     grooming: loadGrooming,
@@ -1930,6 +2056,248 @@ async function loadBrief() {
       </div>
     `).join("")
     : `<div class="empty-state">No projects yet</div>`;
+}
+
+// ── WEEKLY COO REPORT ─────────────────────────────────────────────────────────
+async function loadCooReport() {
+  const data = await api("GET", "/api/reports/weekly-coo");
+  if (!data) return;
+  const s = data.summary || {};
+  const byStage = data.pipeline_by_stage || {};
+  const atRisk = data.at_risk || [];
+  const patterns = data.issue_patterns || [];
+  const heat = data.risk_heat || [];
+  const refl = data.reflections_this_week || [];
+  const stageOrder = ["Discovery", "Config", "Integration", "UAT", "Go-Live", "Hypercare"];
+  const pipelineHtml = stageOrder.map(stage => {
+    const clients = byStage[stage] || [];
+    return clients.length ? `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><strong>${stage}</strong>: ${escapeHtml(clients.join(", "))}</div>` : "";
+  }).filter(Boolean).join("") || "<div class=\"empty-state\">No active projects</div>";
+  const riskHtml = atRisk.length ? atRisk.map(p => `<div style="padding:6px 0;border-bottom:1px solid var(--border)">${escapeHtml(p.client)} (${p.stage})${p.notes ? " — " + escapeHtml(p.notes) : ""}</div>`).join("") : "<div class=\"empty-state\">None</div>";
+  const issueHtml = patterns.length ? patterns.map(r => `<div style="padding:4px 0">${escapeHtml(r.category)}: ${r.open_count} open, ${r.count} total</div>`).join("") : "<div class=\"empty-state\">None</div>";
+  const heatHtml = heat.length ? heat.map(p => `<div style="padding:4px 0"><span class="tag tag-${p.risk_level==='high'?'danger':p.risk_level==='medium'?'warn':'gray'}">${p.risk_score}</span> ${escapeHtml(p.client)} — ${p.risk_level}</div>`).join("") : "<div class=\"empty-state\">All low</div>";
+  const reflHtml = refl.length ? refl.map(r => `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">${r.date}: ${escapeHtml((r.wins||"").slice(0,60))}${(r.wins||"").length>60?"…":""} | ${escapeHtml((r.blockers||"").slice(0,60))}${(r.blockers||"").length>60?"…":""}</div>`).join("") : "<div class=\"empty-state\">None this week</div>";
+  document.getElementById("coo-report-content").innerHTML = `
+    <div class="metrics" style="margin-bottom:16px">
+      <div class="metric-card green"><div class="metric-num">${s.active || 0}</div><div class="metric-label">Active</div></div>
+      <div class="metric-card ${(s.at_risk||0)>0?'danger':'green'}"><div class="metric-num">${s.at_risk || 0}</div><div class="metric-label">At Risk</div></div>
+      <div class="metric-card purple"><div class="metric-num">${s.completed || 0}</div><div class="metric-label">Completed</div></div>
+    </div>
+    <div class="grid-2" style="gap:16px">
+      <div class="card"><div class="card-title">Pipeline by stage</div><div style="font-size:13px">${pipelineHtml}</div></div>
+      <div class="card"><div class="card-title">Risks & blockers</div><div style="font-size:13px">${riskHtml}</div></div>
+      <div class="card"><div class="card-title">Recurring issues</div><div style="font-size:13px">${issueHtml}</div></div>
+      <div class="card"><div class="card-title">Risk heat (watch list)</div><div style="font-size:13px">${heatHtml}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-title">Reflections this week</div><div style="font-size:12px;color:var(--muted)">${reflHtml}</div></div>
+  `;
+}
+
+async function generateCooReportNarrative() {
+  const btn = document.getElementById("coo-generate-btn");
+  const out = document.getElementById("coo-narrative");
+  const card = document.getElementById("coo-narrative-card");
+  if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
+  out.textContent = "Generating narrative…";
+  card.style.display = "block";
+  const data = await api("POST", "/api/ai/coo-report");
+  if (btn) { btn.disabled = false; btn.textContent = "Generate narrative"; }
+  out.textContent = data?.report || data?.error || "Error.";
+}
+
+async function downloadCooReportPdf() {
+  let body = document.getElementById("coo-narrative").textContent?.trim();
+  if (!body || body === "Generating narrative…" || body === "Error.") {
+    const data = await api("POST", "/api/ai/coo-report");
+    body = data?.report || "";
+  }
+  if (!body) { showToast("Generate narrative first or try again"); return; }
+  const title = "Weekly COO Report — " + new Date().toISOString().slice(0, 10);
+  const r = await fetch(`${API}/api/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (TOKEN || "") },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!r.ok) { showToast("PDF failed"); return; }
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "weekly-coo-report-" + new Date().toISOString().slice(0, 10) + ".pdf";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("Download started");
+}
+
+// ── SALES INTAKE ─────────────────────────────────────────────────────────────
+async function loadSalesIntake() {
+  const res = await api("GET", "/api/sales-intake");
+  if (!res || !res.items) return;
+  const listEl = document.getElementById("sales-intake-list");
+  const items = res.items;
+  listEl.innerHTML = items.length
+    ? items.map(s => {
+        const date = (s.intake_date || "").slice(0, 10);
+        const commitments = (s.key_commitments || "").slice(0, 60);
+        const notes = (s.notes || "").slice(0, 40);
+        return `
+        <div class="project-row draggable-card" style="cursor:pointer" onclick="openEditSalesIntake(${s.id})">
+          ${DRAG_HANDLE_HTML}
+          <span class="project-client">${escapeHtml(s.client_name || "Unnamed")}</span>
+          <span style="color:var(--muted);font-size:12px">${escapeHtml(s.source_sales || "—")}</span>
+          <span style="color:var(--muted);font-size:12px">${date || "—"}</span>
+          <span style="font-size:12px">${escapeHtml(s.expected_go_live || "—")}</span>
+          <span style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(commitments)}">${escapeHtml(commitments) || "—"}${(s.key_commitments || "").length > 60 ? "…" : ""}</span>
+          <span style="display:flex;gap:6px">
+            <button type="button" class="btn-sm" onclick="event.stopPropagation();openEditSalesIntake(${s.id})">Edit</button>
+            <button type="button" class="btn-sm" onclick="event.stopPropagation();deleteSalesIntake(${s.id})">Delete</button>
+          </span>
+        </div>`;
+      }).join("")
+    : `<div class="empty-state">No intakes yet. Click "+ Add intake" to capture a new deal.</div>`;
+}
+
+let _editingSalesIntakeId = null;
+function openAddSalesIntake() {
+  _editingSalesIntakeId = null;
+  document.getElementById("sales-intake-modal-title").textContent = "Add intake";
+  document.getElementById("sales-intake-submit-btn").textContent = "Add intake";
+  document.getElementById("si-client-name").value = "";
+  document.getElementById("si-source-sales").value = "";
+  document.getElementById("si-intake-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("si-expected-go-live").value = "";
+  document.getElementById("si-key-commitments").value = "";
+  document.getElementById("si-notes").value = "";
+  document.getElementById("sales-intake-modal").classList.add("open");
+}
+async function openEditSalesIntake(sid) {
+  if (!sid) return;
+  const row = await api("GET", `/api/sales-intake/${sid}`);
+  if (!row) return;
+  _editingSalesIntakeId = sid;
+  document.getElementById("sales-intake-modal-title").textContent = "Edit intake";
+  document.getElementById("sales-intake-submit-btn").textContent = "Save";
+  document.getElementById("si-client-name").value = row.client_name || "";
+  document.getElementById("si-source-sales").value = row.source_sales || "";
+  document.getElementById("si-intake-date").value = (row.intake_date || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+  document.getElementById("si-expected-go-live").value = row.expected_go_live || "";
+  document.getElementById("si-key-commitments").value = row.key_commitments || "";
+  document.getElementById("si-notes").value = row.notes || "";
+  document.getElementById("sales-intake-modal").classList.add("open");
+}
+async function submitSalesIntake() {
+  const payload = {
+    client_name: document.getElementById("si-client-name").value.trim() || "Unnamed",
+    source_sales: document.getElementById("si-source-sales").value.trim() || null,
+    intake_date: document.getElementById("si-intake-date").value || null,
+    expected_go_live: document.getElementById("si-expected-go-live").value.trim() || null,
+    key_commitments: document.getElementById("si-key-commitments").value.trim() || null,
+    notes: document.getElementById("si-notes").value.trim() || null,
+  };
+  if (_editingSalesIntakeId) {
+    await api("PATCH", `/api/sales-intake/${_editingSalesIntakeId}`, payload);
+    showToast("Intake updated");
+  } else {
+    await api("POST", "/api/sales-intake", payload);
+    showToast("Intake added");
+  }
+  closeModal("sales-intake-modal");
+  _editingSalesIntakeId = null;
+  document.getElementById("sales-intake-modal-title").textContent = "Add intake";
+  document.getElementById("sales-intake-submit-btn").textContent = "Add intake";
+  loadSalesIntake();
+}
+async function deleteSalesIntake(sid) {
+  if (!sid || !confirm("Delete this intake?")) return;
+  const res = await api("DELETE", `/api/sales-intake/${sid}`);
+  if (res && res.ok) {
+    showToast("Intake deleted");
+    loadSalesIntake();
+  } else showToast(res?.error || "Failed to delete");
+}
+
+// ── CASE STUDIES (reflection / SA promotion) ──────────────────────────────────
+async function loadCaseStudies() {
+  const list = await api("GET", "/api/case-studies");
+  if (!list || !Array.isArray(list)) return;
+  const listEl = document.getElementById("case-studies-list");
+  listEl.innerHTML = list.length
+    ? list.map(c => {
+        const date = (c.date || "").slice(0, 10);
+        const sit = (c.situation || "").slice(0, 50);
+        const res = (c.result || "").slice(0, 50);
+        return `
+        <div class="project-row draggable-card" style="cursor:pointer" onclick="openEditCaseStudy(${c.id})">
+          ${DRAG_HANDLE_HTML}
+          <span class="project-client">${escapeHtml(c.title || "Untitled")}</span>
+          <span style="color:var(--muted);font-size:12px">${date || "—"}</span>
+          <span style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.situation)}">${escapeHtml(sit) || "—"}${(c.situation || "").length > 50 ? "…" : ""}</span>
+          <span style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.result)}">${escapeHtml(res) || "—"}${(c.result || "").length > 50 ? "…" : ""}</span>
+          <span style="display:flex;gap:6px">
+            <button type="button" class="btn-sm" onclick="event.stopPropagation();openEditCaseStudy(${c.id})">Edit</button>
+            <button type="button" class="btn-sm" onclick="event.stopPropagation();deleteCaseStudy(${c.id})">Delete</button>
+          </span>
+        </div>`;
+      }).join("")
+    : `<div class="empty-state">No case studies yet. Add STAR-style wins for your SA promotion.</div>`;
+}
+
+let _editingCaseStudyId = null;
+function openAddCaseStudy() {
+  _editingCaseStudyId = null;
+  document.getElementById("case-study-modal-title").textContent = "Add case study";
+  document.getElementById("case-study-submit-btn").textContent = "Add case study";
+  document.getElementById("cs-title").value = "";
+  document.getElementById("cs-situation").value = "";
+  document.getElementById("cs-action").value = "";
+  document.getElementById("cs-result").value = "";
+  document.getElementById("cs-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("cs-context").value = "";
+  document.getElementById("case-study-modal").classList.add("open");
+}
+async function openEditCaseStudy(cid) {
+  if (!cid) return;
+  const row = await api("GET", `/api/case-studies/${cid}`);
+  if (!row) return;
+  _editingCaseStudyId = cid;
+  document.getElementById("case-study-modal-title").textContent = "Edit case study";
+  document.getElementById("case-study-submit-btn").textContent = "Save";
+  document.getElementById("cs-title").value = row.title || "";
+  document.getElementById("cs-situation").value = row.situation || "";
+  document.getElementById("cs-action").value = row.action || "";
+  document.getElementById("cs-result").value = row.result || "";
+  document.getElementById("cs-date").value = (row.date || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+  document.getElementById("cs-context").value = row.context || "";
+  document.getElementById("case-study-modal").classList.add("open");
+}
+async function submitCaseStudy() {
+  const payload = {
+    title: document.getElementById("cs-title").value.trim() || "Untitled",
+    situation: document.getElementById("cs-situation").value.trim() || null,
+    action: document.getElementById("cs-action").value.trim() || null,
+    result: document.getElementById("cs-result").value.trim() || null,
+    date: document.getElementById("cs-date").value || null,
+    context: document.getElementById("cs-context").value.trim() || null,
+  };
+  if (_editingCaseStudyId) {
+    await api("PATCH", `/api/case-studies/${_editingCaseStudyId}`, payload);
+    showToast("Case study updated");
+  } else {
+    await api("POST", "/api/case-studies", payload);
+    showToast("Case study added");
+  }
+  closeModal("case-study-modal");
+  _editingCaseStudyId = null;
+  document.getElementById("case-study-modal-title").textContent = "Add case study";
+  document.getElementById("case-study-submit-btn").textContent = "Add case study";
+  loadCaseStudies();
+}
+async function deleteCaseStudy(cid) {
+  if (!cid || !confirm("Delete this case study?")) return;
+  const res = await api("DELETE", `/api/case-studies/${cid}`);
+  if (res && res.ok) {
+    showToast("Case study deleted");
+    loadCaseStudies();
+  } else showToast(res?.error || "Failed to delete");
 }
 
 // ── CLIENTS ──────────────────────────────────────────────────────────────────
