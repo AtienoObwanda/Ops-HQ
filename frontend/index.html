@@ -506,7 +506,30 @@
 
   .pipeline-col-drop { min-height: 60px; transition: background 0.15s; }
   .pipeline-col-drop.pipeline-drop-over { background: var(--accent); opacity: 0.12; border-radius: 8px; margin: 0 -4px; padding: 4px; }
+  .drag-handle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin: -2px 4px -2px -2px;
+    padding: 2px;
+    border-radius: 4px;
+    color: var(--muted);
+    cursor: grab;
+    user-select: none;
+  }
+  .drag-handle:hover { color: var(--text); background: var(--bg); }
+  .drag-handle:active { cursor: grabbing; }
+  .drag-handle svg { width: 12px; height: 16px; display: block; }
+  .drag-handle-cell { width: 28px; padding: 8px 4px; vertical-align: middle; }
+  .draggable-card { cursor: grab; user-select: none; }
+  .draggable-card:active { cursor: grabbing; }
   .pipeline-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -522,6 +545,7 @@
   .pipeline-item:active { cursor: grabbing; }
   .pipeline-item.dragging { opacity: 0.6; }
   .pipeline-item:hover { border-color: var(--accent); }
+  .pipeline-item-body { flex: 1; min-width: 0; }
   .pipeline-item-jira { border-left: 3px solid var(--accent2); }
   .pipeline-item-owner { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
 
@@ -1743,7 +1767,8 @@ async function loadBrief() {
   const pending = data.pending_do_first || [];
   document.getElementById("brief-pending").innerHTML = pending.length
     ? pending.map(item => `
-        <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div class="project-row draggable-card" style="padding:8px 0;border-bottom:1px solid var(--border)" draggable="true">
+          ${DRAG_HANDLE_HTML}
           <span class="tag tag-${item.type === 'at_risk' ? 'danger' : item.type === 'overdue' ? 'warn' : item.type === 'jira_blocked' ? 'danger' : 'warn'}" style="font-size:10px;margin-right:8px">${item.type.replace(/_/g, ' ')}</span>
           <span style="font-size:13px">${escapeHtml(item.label)}</span>
         </div>
@@ -1754,7 +1779,8 @@ async function loadBrief() {
   const arEl = document.getElementById("brief-atrisk");
   arEl.innerHTML = data.at_risk.length
     ? data.at_risk.map(p => `
-        <div class="project-row" onclick="nav('pipeline')">
+        <div class="project-row draggable-card" draggable="true" onclick="nav('pipeline')">
+          ${DRAG_HANDLE_HTML}
           <span class="health-dot dot-${p.health==='Blocked'?'danger':'warn'}"></span>
           <span class="project-client">${escapeHtml(p.client)}</span>
           <span class="project-stage">${stageDisplay(p.stage)}</span>
@@ -1766,7 +1792,8 @@ async function loadBrief() {
   // Stale
   document.getElementById("brief-stale").innerHTML = data.stale.length
     ? data.stale.map(p => `
-        <div class="project-row">
+        <div class="project-row draggable-card" draggable="true">
+          ${DRAG_HANDLE_HTML}
           <span class="health-dot dot-warn"></span>
           <span class="project-client">${escapeHtml(p.client)}</span>
           <span class="project-owner">${p.owner_name || "—"}</span>
@@ -1779,7 +1806,8 @@ async function loadBrief() {
   const goLiveWeek = data.go_live_this_week || [];
   document.getElementById("brief-golive-week").innerHTML = goLiveWeek.length
     ? goLiveWeek.map(p => `
-        <div class="project-row" onclick="nav('pipeline')">
+        <div class="project-row draggable-card" draggable="true" onclick="nav('pipeline')">
+          ${DRAG_HANDLE_HTML}
           <span class="project-client">${escapeHtml(p.client)}</span>
           <span style="font-size:12px;color:var(--muted)">${p.go_live || ""}</span>
           <span class="tag tag-gray">${stageDisplay(p.stage) || ""}</span>
@@ -1791,7 +1819,8 @@ async function loadBrief() {
   const completed = data.recently_completed || [];
   document.getElementById("brief-completed").innerHTML = completed.length
     ? completed.map(p => `
-        <div class="project-row" onclick="nav('scopeuat')">
+        <div class="project-row draggable-card" draggable="true" onclick="nav('scopeuat')">
+          ${DRAG_HANDLE_HTML}
           <span class="project-client">${escapeHtml(p.client)}</span>
           <span style="font-size:11px;color:var(--muted)">${(p.updated_at || "").slice(0,10)}</span>
         </div>
@@ -1806,7 +1835,8 @@ async function loadBrief() {
         const jira = c.jira_tickets || 0;
         const hasAttention = (c.at_risk_count || 0) > 0 || (c.stale_count || 0) > 0 || issues > 0 || jira > 0;
         const issuesLine = jira > 0 ? `${issues} issues · ${jira} Jira` : `${issues} issues`;
-        return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
+        return `<div class="draggable-card" style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;gap:8px" draggable="true">
+          ${DRAG_HANDLE_HTML}
           <span style="font-weight:600;font-size:13px">${escapeHtml(c.client_name)}</span>
           <span style="font-size:12px;color:var(--muted)">${c.project_count} projects · ${c.at_risk_count || 0} at risk · ${c.stale_count || 0} stale · ${issuesLine}</span>
         </div>`;
@@ -1817,7 +1847,8 @@ async function loadBrief() {
   const openIssues = data.open_issues || [];
   document.getElementById("brief-open-issues").innerHTML = openIssues.length
     ? openIssues.slice(0, 12).map(i => `
-        <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <div class="draggable-card" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:8px" draggable="true">
+          ${DRAG_HANDLE_HTML}
           <span class="tag" style="font-size:10px">${escapeHtml(i.category || "")}</span>
           ${escapeHtml((i.title || "").slice(0, 50))}${(i.title || "").length > 50 ? "…" : ""}
           ${i.client ? `<span style="color:var(--muted)"> · ${escapeHtml(i.client)}</span>` : ""}
@@ -1834,7 +1865,8 @@ async function loadBrief() {
     const items = [...(jira.blocked || []).map(t => ({...t, _type:"blocked"})), ...(jira.stale || []).map(t => ({...t, _type:"stale"}))];
     jiraHtml = items.length
       ? items.slice(0, 6).map(t => `
-          <div class="jira-item">
+          <div class="jira-item draggable-card" draggable="true">
+            ${DRAG_HANDLE_HTML}
             <span class="jira-key">${escapeHtml(t.key)}</span>
             <div style="flex:1">
               <div class="jira-summary">${escapeHtml((t.summary || "").slice(0, 50))}</div>
@@ -1868,14 +1900,15 @@ async function loadClients() {
   const monEl = document.getElementById("client-monitor-list");
   listEl.innerHTML = clients.length
     ? clients.map(c => `
-        <div class="project-row" style="cursor:pointer" onclick="openClientDetail(${c.id})">
+        <div class="project-row draggable-card" style="cursor:pointer" draggable="true" onclick="openClientDetail(${c.id})">
+          ${DRAG_HANDLE_HTML}
           <span class="project-client">${c.name}</span>
           <span><button type="button" class="btn-sm accent" onclick="event.stopPropagation();generateClientUpdateForClient(${c.id})">Draft update</button></span>
         </div>
       `).join("")
     : `<div class="empty-state">No clients yet. Click "+ Add client" to add one.</div>`;
   monEl.innerHTML = clients.length
-    ? clients.map(c => `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"><span>${c.name}</span><a href="#" onclick="nav('clients');openClientDetail(${c.id});return false" style="font-size:12px;color:var(--accent)">View & log issues</a></div>`).join("")
+    ? clients.map(c => `<div class="draggable-card" style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px" draggable="true">${DRAG_HANDLE_HTML}<span>${c.name}</span><a href="#" onclick="nav('clients');openClientDetail(${c.id});return false" style="font-size:12px;color:var(--accent)">View & log issues</a></div>`).join("")
     : `<div class="empty-state">Add clients to monitor them here.</div>`;
 }
 
@@ -2006,10 +2039,13 @@ async function loadPipeline() {
       </div>
       <div class="pipeline-col-drop" data-stage="${stage}" ondragover="pipelineDragOver(event)" ondrop="pipelineDrop(event)" ondragleave="pipelineDragLeave(event)">
         ${byStage[stage].map(p => `
-        <div class="pipeline-item" draggable="true" data-project-id="${p.id}" data-stage="${escapeHtml(p.stage)}" ondragstart="pipelineDragStart(event, ${p.id})" ondragend="pipelineDragEnd(event)" onclick="if(!window._pipelineDragging) openProjectDetail(${p.id})">
-          <div>${escapeHtml(p.client)}</div>
-          <div class="pipeline-item-owner">${escapeHtml(p.owner_name || "—")}${p.recon_name ? " · Recon: " + escapeHtml(p.recon_name) : ""}</div>
-          ${p.health !== "On Track" ? `<div style="margin-top:4px"><span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span></div>` : ""}
+        <div class="pipeline-item draggable-card" draggable="true" data-project-id="${p.id}" data-stage="${escapeHtml(p.stage)}" ondragstart="pipelineDragStart(event, ${p.id})" ondragend="pipelineDragEnd(event)" onclick="if(!window._pipelineDragging) openProjectDetail(${p.id})">
+          <span class="drag-handle" title="Drag to move" onclick="event.stopPropagation()"><svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.2"/><circle cx="8" cy="4" r="1.2"/><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg></span>
+          <div class="pipeline-item-body">
+            <div>${escapeHtml(p.client)}</div>
+            <div class="pipeline-item-owner">${escapeHtml(p.owner_name || "—")}${p.recon_name ? " · Recon: " + escapeHtml(p.recon_name) : ""}</div>
+            ${p.health !== "On Track" ? `<div style="margin-top:4px"><span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span></div>` : ""}
+          </div>
         </div>
         `).join("")}
       </div>
@@ -2029,7 +2065,8 @@ async function loadPipeline() {
         const name = (p.name || p.client || "").trim() || "—";
         const client = (p.client || "").trim();
         const line = client && name !== client ? `${client} — ${name}` : (client || name);
-        return `<div class="project-row" onclick="openProjectDetail(${p.id})" title="${escapeHtml(line)}">
+        return `<div class="project-row draggable-card" draggable="true" onclick="openProjectDetail(${p.id})" title="${escapeHtml(line)}">
+          ${DRAG_HANDLE_HTML}
           <span class="project-client">${escapeHtml(line)}</span>
         </div>`;
       }).join("")
@@ -2352,7 +2389,8 @@ async function loadDocket() {
       <div class="card-title">🎯 Do first</div>
       <div style="max-height:320px;overflow-y:auto">
         ${pending.length ? pending.map(item => `
-          <div class="project-row" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:${item.project || item.ticket ? "pointer" : "default"}" ${rowClick(item)}>
+          <div class="project-row draggable-card" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:${item.project || item.ticket ? "pointer" : "default"}" draggable="true" ${rowClick(item)}>
+            ${DRAG_HANDLE_HTML}
             <span class="tag tag-${tagClass(item.type)}" style="font-size:10px;margin-right:8px">${(item.type || "").replace(/_/g, " ")}</span>
             <span style="font-size:13px">${escapeHtml(item.label)}</span>
           </div>
@@ -2363,7 +2401,8 @@ async function loadDocket() {
       <div class="card">
         <div class="card-title">🔴 At risk</div>
         ${atRisk.length ? atRisk.slice(0, 6).map(p => `
-          <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
+          <div class="project-row draggable-card" style="padding:8px 0;border-bottom:1px solid var(--border)" draggable="true" onclick="openProjectDetail(${p.id})">
+            ${DRAG_HANDLE_HTML}
             <span class="health-dot dot-${p.health === "Blocked" ? "danger" : "warn"}"></span>
             <span class="project-client">${escapeHtml(p.client)}</span>
             <span class="tag tag-${p.health === "Blocked" ? "danger" : "warn"}">${p.health}</span>
@@ -2373,7 +2412,8 @@ async function loadDocket() {
       <div class="card">
         <div class="card-title">⏰ Stale (no update 24h+)</div>
         ${stale.length ? stale.slice(0, 6).map(p => `
-          <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
+          <div class="project-row draggable-card" style="padding:8px 0;border-bottom:1px solid var(--border)" draggable="true" onclick="openProjectDetail(${p.id})">
+            ${DRAG_HANDLE_HTML}
             <span class="project-client">${escapeHtml(p.client)}</span>
             <span style="font-size:12px;color:var(--muted)">${p.owner_name || "—"}</span>
           </div>
@@ -2382,7 +2422,8 @@ async function loadDocket() {
       <div class="card">
         <div class="card-title">📅 Go-live overdue</div>
         ${goLiveOverdue.length ? goLiveOverdue.slice(0, 5).map(p => `
-          <div class="project-row" style="padding:8px 0;border-bottom:1px solid var(--border)" onclick="openProjectDetail(${p.id})">
+          <div class="project-row draggable-card" style="padding:8px 0;border-bottom:1px solid var(--border)" draggable="true" onclick="openProjectDetail(${p.id})">
+            ${DRAG_HANDLE_HTML}
             <span class="project-client">${escapeHtml(p.client)}</span>
             <span style="font-size:12px;color:var(--muted)">was ${p.go_live || ""}</span>
           </div>
@@ -2392,7 +2433,7 @@ async function loadDocket() {
         <div class="card-title">🐛 Open issues</div>
         ${openIssues.length ? `
           <div style="padding:8px 0">${openIssues.length} open. <a href="#" onclick="nav('issues');return false" style="color:var(--accent);font-size:13px">View Issues</a></div>
-          ${openIssues.slice(0, 3).map(i => `<div style="padding:6px 0;font-size:12px;border-bottom:1px solid var(--border)">${escapeHtml((i.title || "").slice(0, 45))}${(i.title || "").length > 45 ? "…" : ""}</div>`).join("")}
+          ${openIssues.slice(0, 3).map(i => `<div class="draggable-card" style="padding:6px 0;font-size:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px" draggable="true">${DRAG_HANDLE_HTML}${escapeHtml((i.title || "").slice(0, 45))}${(i.title || "").length > 45 ? "…" : ""}</div>`).join("")}
         ` : "<div class=\"empty-state\">None</div>"}
       </div>
     </div>
@@ -2400,7 +2441,7 @@ async function loadDocket() {
     <div class="card" style="margin-top:16px">
       <div class="card-title">🔧 Jira blocked</div>
       <div style="font-size:13px">
-        ${jiraBlocked.map(t => `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><a href="${t.url || "#"}" target="_blank" rel="noopener" class="jira-key">${escapeHtml(t.key)}</a> ${escapeHtml((t.summary || "").slice(0, 50))}${(t.summary || "").length > 50 ? "…" : ""}</div>`).join("")}
+        ${jiraBlocked.map(t => `<div class="draggable-card" style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px" draggable="true">${DRAG_HANDLE_HTML}<a href="${t.url || "#"}" target="_blank" rel="noopener" class="jira-key">${escapeHtml(t.key)}</a> ${escapeHtml((t.summary || "").slice(0, 50))}${(t.summary || "").length > 50 ? "…" : ""}</div>`).join("")}
       </div>
     </div>
     ` : ""}
@@ -2488,7 +2529,8 @@ async function loadEisenhower() {
     const list = byQuad[q] || [];
     el.innerHTML = list.length
       ? list.map(t => `
-          <div class="eisenhower-task" draggable="true" data-task-id="${t.id}" ondragstart="eisenhowerDragStart(event, ${t.id})" ondragend="eisenhowerDragEnd(event)">
+          <div class="eisenhower-task draggable-card" draggable="true" data-task-id="${t.id}" ondragstart="eisenhowerDragStart(event, ${t.id})" ondragend="eisenhowerDragEnd(event)">
+            <span class="drag-handle" title="Drag to move"><svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.2"/><circle cx="8" cy="4" r="1.2"/><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg></span>
             <div class="eisenhower-task-title">${escapeHtml(t.title)}${t.jira_key ? ` <span class="eisenhower-task-meta">${escapeHtml(t.jira_key)}</span>` : ""}</div>
             <div class="eisenhower-task-meta">${escapeHtml(t.assignee_name || "—")}${t.due_date ? " · " + t.due_date : ""}</div>
             <div class="eisenhower-task-actions">
@@ -2637,7 +2679,8 @@ async function loadEscalations() {
         const keys = (e.jira_keys || "").split(",").map(k => k.trim()).filter(Boolean);
         const keysStr = keys.length ? keys.join(", ") : "—";
         return `
-          <div class="escalation-row" style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+          <div class="escalation-row draggable-card" style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:8px" draggable="true">
+            ${DRAG_HANDLE_HTML}
             <div style="flex:1;min-width:180px">
               <div style="font-weight:600">${escapeHtml(e.title)}</div>
               <div style="font-size:12px;color:var(--muted)">${keysStr} · ${(e.created_at || "").slice(0,10)} · ${e.status || "draft"}</div>
@@ -2779,6 +2822,7 @@ function escapeHtml(s) {
   div.textContent = s;
   return div.innerHTML;
 }
+const DRAG_HANDLE_HTML = '<span class="drag-handle" title="Drag to move" onclick="event.stopPropagation()"><svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.2"/><circle cx="8" cy="4" r="1.2"/><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg></span>';
 
 // ── WORKLOAD (from Ticket Grooming + Pipeline; summary, totals, analysis, breakdown) ──
 async function loadWorkload() {
@@ -2897,7 +2941,8 @@ async function loadIssues() {
 
   document.getElementById("issue-list").innerHTML = data.issues.length
     ? data.issues.map(i => `
-        <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div class="draggable-card" style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap" draggable="true">
+          ${DRAG_HANDLE_HTML}
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:600">${escapeHtml(i.title)}</div>
             ${i.client ? `<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px">${escapeHtml(i.client)}</div>` : ""}
@@ -3039,9 +3084,10 @@ async function loadDocuments() {
   `;
   listEl.innerHTML = docs.length
     ? `<table class="grooming-table">
-        <thead><tr><th>Title</th><th>Client</th><th>Type</th><th>Updated</th><th>Actions</th></tr></thead>
+        <thead><tr><th style="width:28px"></th><th>Title</th><th>Client</th><th>Type</th><th>Updated</th><th>Actions</th></tr></thead>
         <tbody>${docs.map(d => `
-          <tr>
+          <tr class="draggable-card" draggable="true">
+            <td class="drag-handle-cell" onclick="event.stopPropagation()">${DRAG_HANDLE_HTML}</td>
             <td style="font-weight:600">${escapeHtml((d.title || "").slice(0, 50))}${(d.title || "").length > 50 ? "…" : ""}</td>
             <td style="font-size:12px;color:var(--muted)">${escapeHtml(d.client_name || "—")}</td>
             <td><span class="tag tag-gray">${escapeHtml(DOC_TEMPLATE_NAMES[d.template_id] || d.template_id)}</span></td>
@@ -3402,7 +3448,8 @@ async function loadScopeUat() {
         const hasScope = !!(p.project_scope_content || "").trim();
         const hasUat = !!(p.uat_signoff_content || "").trim();
         return `
-          <div style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+          <div class="draggable-card" style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:10px" draggable="true">
+            ${DRAG_HANDLE_HTML}
             <div style="flex:1;min-width:200px">
               <div style="font-weight:600">${escapeHtml(p.client)} — ${escapeHtml(p.name || p.client)}</div>
               <div style="font-size:12px;color:var(--muted)">${stageDisplay(p.stage) || ""} ${scopeDate ? " · Scope " + scopeDate : ""} ${uatDate ? " · UAT " + uatDate : ""}</div>
