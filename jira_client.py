@@ -65,6 +65,28 @@ def _jira_get_issue(issue_key, fields=None):
         return None
 
 
+def _jira_get_issue_comments(issue_key):
+    """GET comments for an issue. Returns list of { author, created, body_plain }."""
+    if not all([JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN]):
+        return []
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
+    try:
+        resp = requests.get(url, headers=_auth_header(), timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        comments = data.get("comments", [])
+        out = []
+        for c in comments:
+            body = c.get("body")
+            body_plain = _adf_to_plain(body).strip() if body else ""
+            author = (c.get("author") or {}).get("displayName", "Unknown")
+            created = c.get("created", "")[:19]  # trim to datetime
+            out.append({"author": author, "created": created, "body_plain": body_plain})
+        return out
+    except Exception:
+        return []
+
+
 def _adf_to_plain(node):
     """Recursively extract plain text from Jira ADF (Atlassian Document Format) description."""
     if not node:
@@ -228,10 +250,11 @@ def _hours_since(iso_str):
 
 # ── FETCH BY KEYS (for product scope drafting) ──────────────────────────────────
 
-def get_tickets_by_keys(keys):
+def get_tickets_by_keys(keys, include_comments=True):
     """
-    Fetch full issue details (summary, description, status, etc.) for given Jira keys.
-    Returns list of dicts with key, summary, status, description_plain, url for use in AI scope drafting.
+    Fetch full issue details (summary, description, status, comments) for given Jira keys.
+    Returns list of dicts with key, summary, status, description, comments (list of {author, created, body_plain}).
+    Used for AI scope/document drafting so the AI can analyze ticket + comments end-to-end.
     """
     if not is_configured() or not keys:
         return []
@@ -247,6 +270,7 @@ def get_tickets_by_keys(keys):
         fields_obj = issue.get("fields", {})
         desc = fields_obj.get("description")
         description_plain = _adf_to_plain(desc).strip() if desc else ""
+        comments = _jira_get_issue_comments(key) if include_comments else []
         result.append({
             "key":        issue.get("key", ""),
             "summary":    fields_obj.get("summary", ""),
@@ -255,9 +279,36 @@ def get_tickets_by_keys(keys):
             "assignee":   (fields_obj.get("assignee") or {}).get("displayName", "Unassigned"),
             "updated":    fields_obj.get("updated", ""),
             "description": description_plain,
+            "comments":   comments,
             "url":        f"{JIRA_BASE_URL}/browse/{issue.get('key', '')}",
         })
     return result
+
+
+def format_tickets_for_ai(tickets):
+    """
+    Format ticket list (with descriptions and comments) into one text block for AI.
+    AI can analyze ticket + comments end-to-end for scope/docs.
+    """
+    if not tickets:
+        return ""
+    blocks = []
+    for t in tickets:
+        lines = [
+            f"[{t.get('key')}] {t.get('summary')}",
+            f"Status: {t.get('status')}",
+            f"Assignee: {t.get('assignee')}",
+            "",
+            (t.get("description") or "").strip() or "(No description)",
+        ]
+        comments = t.get("comments") or []
+        if comments:
+            lines.append("")
+            lines.append("Comments:")
+            for c in comments:
+                lines.append(f"  - {c.get('created', '')} | {c.get('author', '')}: {c.get('body_plain', '')}")
+        blocks.append("\n".join(lines))
+    return "\n\n---\n\n".join(blocks)
 
 
 # ── SUMMARY FOR BRIEF ─────────────────────────────────────────────────────────

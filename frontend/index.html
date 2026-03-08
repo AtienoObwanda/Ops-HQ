@@ -1044,6 +1044,33 @@
         <div class="ai-output" id="ask-ai-output" style="display:none;margin-top:14px;white-space:pre-wrap"></div>
       </div>
 
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-title">📄 Document from template (AI)</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Industry-standard templates. Add Jira ticket keys and/or paste context — or leave both empty for a placeholder draft.</p>
+        <div class="form-field" style="margin-bottom:10px">
+          <label class="form-label">Template</label>
+          <select class="form-select" id="doc-template-select">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+        <div class="form-field" style="margin-bottom:10px">
+          <label class="form-label">Jira ticket keys (optional)</label>
+          <input class="form-input" id="doc-jira-keys" placeholder="e.g. NAO-831, NAO-830" />
+        </div>
+        <div class="form-field" style="margin-bottom:10px">
+          <label class="form-label">Context (optional — paste anything if no tickets)</label>
+          <textarea class="form-textarea" id="doc-context" rows="4" placeholder="Paste background, notes, requirements, or leave empty."></textarea>
+        </div>
+        <button type="button" class="btn-accent" id="doc-generate-btn" onclick="generateAIDocument()">Generate document</button>
+        <div id="doc-output-wrap" style="display:none;margin-top:14px">
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <button type="button" class="btn-sm" onclick="copyAIDocument()">Copy</button>
+            <button type="button" class="btn-sm" onclick="downloadAIDocumentPdf()">Download PDF</button>
+          </div>
+          <div class="ai-output" id="doc-output" style="white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
+        </div>
+      </div>
+
       <div class="grid-2">
 
         <div class="card">
@@ -2326,13 +2353,69 @@ async function updateGoalProgress(id, value) {
 }
 
 // ── AI TOOLS ──────────────────────────────────────────────────────────────────
+let _lastAIDocument = null;  // { title, draft } for Copy / Download PDF
+
 async function loadAITools() {
-  const clients = await api("GET", "/api/clients");
+  const [clients, templates] = await Promise.all([
+    api("GET", "/api/clients"),
+    api("GET", "/api/ai/document-templates"),
+  ]);
   const sel = document.getElementById("cu-client-select");
   if (sel) {
     sel.innerHTML = `<option value="">Select client...</option>` +
       (clients || []).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
   }
+  const docSel = document.getElementById("doc-template-select");
+  if (docSel && Array.isArray(templates)) {
+    docSel.innerHTML = templates.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
+    if (templates.length) docSel.selectedIndex = 0;
+  }
+}
+
+async function generateAIDocument() {
+  const templateId = document.getElementById("doc-template-select").value;
+  if (!templateId) { showToast("Select a template"); return; }
+  const keysStr = document.getElementById("doc-jira-keys").value.trim();
+  const jiraKeys = keysStr ? keysStr.split(/[\s,]+/).map(k => k.trim()).filter(Boolean) : [];
+  const context = document.getElementById("doc-context").value.trim() || undefined;
+  const wrap = document.getElementById("doc-output-wrap");
+  const out = document.getElementById("doc-output");
+  const btn = document.getElementById("doc-generate-btn");
+  wrap.style.display = "block";
+  out.textContent = "Generating...";
+  if (btn) btn.disabled = true;
+  const data = await api("POST", "/api/ai/document", { template_id: templateId, jira_keys: jiraKeys.length ? jiraKeys : undefined, context });
+  if (btn) btn.disabled = false;
+  _lastAIDocument = null;
+  if (data && data.draft) {
+    const templateName = document.getElementById("doc-template-select").selectedOptions[0]?.text || "Document";
+    _lastAIDocument = { title: templateName, draft: data.draft };
+    out.textContent = data.draft;
+  } else {
+    out.textContent = data?.error || "Error generating document.";
+  }
+}
+
+function copyAIDocument() {
+  if (!_lastAIDocument) { showToast("Generate a document first"); return; }
+  navigator.clipboard.writeText(_lastAIDocument.draft).then(() => showToast("Copied to clipboard")).catch(() => showToast("Copy failed"));
+}
+
+async function downloadAIDocumentPdf() {
+  if (!_lastAIDocument) { showToast("Generate a document first"); return; }
+  const r = await fetch(`${API}/api/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${TOKEN}` },
+    body: JSON.stringify({ title: _lastAIDocument.title, body: _lastAIDocument.draft }),
+  });
+  if (!r.ok) { showToast("Download failed"); return; }
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (_lastAIDocument.title.replace(/[^a-z0-9]+/gi, "-") || "document") + ".pdf";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("Download started");
 }
 
 async function askCockpitAI() {

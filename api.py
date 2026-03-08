@@ -785,6 +785,62 @@ def ai_ask():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/ai/document-templates", methods=["GET"])
+@_require_auth()
+def ai_document_templates():
+    """List industry-standard document templates (id, name, description)."""
+    out = [
+        {"id": k, "name": v["name"], "description": v["description"]}
+        for k, v in ai.DOCUMENT_TEMPLATES.items()
+    ]
+    return jsonify(out)
+
+
+@app.route("/api/ai/document", methods=["POST"])
+@_require_auth(roles=["admin", "engineer"])
+def ai_document():
+    """
+    Generate a document from an industry-standard template. Purely AI.
+    Body: template_id, jira_keys (optional list), context (optional string).
+    If no tickets and no context, AI still produces a template-shaped draft.
+    """
+    data = request.json or {}
+    template_id = (data.get("template_id") or "").strip()
+    if not template_id or template_id not in ai.DOCUMENT_TEMPLATES:
+        return jsonify({"error": "template_id required and must be a valid template"}), 400
+    keys_raw = data.get("jira_keys") or []
+    jira_keys = keys_raw if isinstance(keys_raw, list) else [k.strip() for k in str(keys_raw).replace(",", " ").split() if k.strip()]
+    context = (data.get("context") or "").strip()
+    tickets_text = ""
+    if jira_keys:
+        tickets = jira.get_tickets_by_keys(jira_keys)
+        tickets_text = jira.format_tickets_for_ai(tickets) if tickets else ""
+    try:
+        draft = ai.generate_document_from_template(template_id, tickets_text or None, context or None)
+        return jsonify({"draft": draft, "template_id": template_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/pdf", methods=["POST"])
+@_require_auth()
+def generate_pdf():
+    """Generate a PDF from title + body (e.g. for AI document download). Body: title, body."""
+    data = request.json or {}
+    title = (data.get("title") or "Document").strip()
+    body = (data.get("body") or "").strip()
+    try:
+        pdf_bytes = pdf_export.generic_pdf(title, body)
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="document.pdf",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── PRODUCT ESCALATIONS ───────────────────────────────────────────────────────
 
 @app.route("/api/escalations", methods=["GET"])
@@ -866,10 +922,7 @@ def ai_product_scope_from_tickets():
     if not jira_keys:
         return jsonify({"error": "jira_keys required (list of ticket keys)"}), 400
     tickets = jira.get_tickets_by_keys(jira_keys)
-    tickets_text = "\n\n".join(
-        f"[{t.get('key')}] {t.get('summary')}\nStatus: {t.get('status')}\n{t.get('description', '')}"
-        for t in tickets
-    ) if tickets else "No ticket details found (check Jira config and keys)."
+    tickets_text = jira.format_tickets_for_ai(tickets) if tickets else "No ticket details found (check Jira config and keys)."
     try:
         raw = ai.generate_product_scope_from_tickets_only(tickets_text)
         title = ""
@@ -917,10 +970,7 @@ def ai_product_scope():
         drive_notes = data.get("drive_notes") or ""
 
     tickets = jira.get_tickets_by_keys(jira_keys) if jira_keys else []
-    tickets_text = "\n\n".join(
-        f"[{t.get('key')}] {t.get('summary')}\nStatus: {t.get('status')}\n{t.get('description', '')}"
-        for t in tickets
-    ) if tickets else "No tickets linked or Jira not configured."
+    tickets_text = jira.format_tickets_for_ai(tickets) if tickets else "No tickets linked or Jira not configured."
 
     drive_content = drive_links.strip()
     if drive_notes.strip():

@@ -248,11 +248,11 @@ Generate my talking points for this meeting."""
 
 def generate_product_scope_from_tickets_only(tickets_text):
     """
-    From Jira tickets only: AI suggests an escalation title and drafts the full product scope.
+    From Jira tickets only (including comments): AI suggests an escalation title and drafts the full product scope.
     Returns a single text block: first line 'TITLE: <suggested title>', then blank line, then scope document.
     """
     system = """You are a senior delivery/ops lead drafting a product scope for an escalation to the Product team.
-You will be given Jira ticket details only. Do two things:
+You will be given Jira ticket details including descriptions and comments. Analyze everything end-to-end: comments often contain clarifications, decisions, and context. Do two things:
 1. Suggest a short escalation title (e.g. "Kuda Bill Payment – Glo reporting and recon") based on the tickets.
 2. Write a full product scope document.
 
@@ -269,11 +269,11 @@ Then a blank line, then the product scope with this structure:
 
 Keep the scope under 400 words. Plain English. For internal Product consumption."""
 
-    user = f"""JIRA TICKETS:
+    user = f"""JIRA TICKETS (description + comments when present):
 
 {tickets_text or 'No tickets provided.'}
 
-Output the TITLE line first, then the product scope document."""
+Use the full context above (including any comments) to suggest a title and draft the scope. Output the TITLE line first, then the product scope document."""
 
     return _call(system, user, max_tokens=1200)
 
@@ -281,11 +281,11 @@ Output the TITLE line first, then the product scope document."""
 def generate_product_scope(title, description, tickets_text, future_notes, drive_content):
     """
     Draft a product scope document for an escalation to product.
-    Inputs: escalation title/description; text from Jira tickets; future/backlog notes; Google Drive links + pasted content.
+    Inputs: escalation title/description; text from Jira tickets (including comments); future/backlog notes; Google Drive links + pasted content.
     """
     system = """You are a senior delivery/ops lead drafting a product scope for an escalation to the Product team.
 Your output is a clear, structured product scope document that Product can use to prioritise and spec work.
-Use the provided context from Jira tickets, future/backlog notes, and any Drive references. Be specific and actionable.
+Use the provided context: Jira tickets (descriptions and comments — analyze comments for decisions and clarifications), future/backlog notes, and any Drive references. Be specific and actionable.
 Structure the scope as:
 1. Summary (2–3 sentences: what we're asking for and why)
 2. Background / context (from tickets and notes)
@@ -408,7 +408,7 @@ DOCUMENT_TEMPLATES = {
         "name": "Product scope / Escalation",
         "description": "Summary, background, proposed scope, OOS, success criteria, references.",
         "system": """You are a senior delivery/ops lead drafting a product scope for the Product team.
-Use ONLY the context provided (Jira tickets and/or pasted context). Output a clear, structured document.
+Use ONLY the context provided (Jira tickets may include descriptions and comments — analyze comments end-to-end for decisions and context; and/or pasted context). Output a clear, structured document.
 Structure: 1) Summary (2–3 sentences). 2) Background/context. 3) Proposed scope (bullets). 4) Out of scope. 5) Success criteria. 6) References.
 Under 500 words. Plain English. Industry-standard product scope.""",
     },
@@ -483,8 +483,8 @@ def generate_document_from_template(template_id, tickets_text, context):
     """
     Generate a document from an industry-standard template. Purely AI.
     template_id: key in DOCUMENT_TEMPLATES
-    tickets_text: optional text from Jira tickets
-    context: optional free-form context (user paste, no ticket)
+    tickets_text: optional text from Jira tickets (includes descriptions and comments when provided)
+    context: optional free-form context (user paste)
     If no tickets and no context, AI will still try to produce a draft from minimal prompt.
     """
     template = DOCUMENT_TEMPLATES.get(template_id)
@@ -493,7 +493,7 @@ def generate_document_from_template(template_id, tickets_text, context):
     system = template["system"]
     parts = []
     if tickets_text and tickets_text.strip():
-        parts.append("--- JIRA TICKETS ---\n" + tickets_text.strip())
+        parts.append("--- JIRA TICKETS (description + comments when present; analyze end-to-end) ---\n" + tickets_text.strip())
     if context and context.strip():
         parts.append("--- ADDITIONAL CONTEXT (user-provided) ---\n" + context.strip())
     if not parts:
