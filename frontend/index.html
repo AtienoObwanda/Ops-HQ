@@ -2862,7 +2862,8 @@ async function loadWorkload() {
         if (res && res.analysis) {
           perfContent.innerHTML = `<div style="white-space:pre-wrap;font-size:13px;line-height:1.5">${escapeHtml(res.analysis)}</div>`;
         } else {
-          perfContent.textContent = "No analysis returned.";
+          perfContent.textContent = res && res.error ? res.error : "No analysis returned.";
+          if (res && res.error) showToast(res.error);
         }
       } catch (e) {
         perfContent.textContent = "Failed to generate analysis.";

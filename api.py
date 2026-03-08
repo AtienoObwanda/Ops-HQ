@@ -1299,49 +1299,52 @@ def jira_engineer_performance():
 @_require_auth()
 def ai_engineer_performance():
     """AI analysis of engineer performance with trends: 7d, 30d, 90d closed counts + avg cycle time. Excludes Unassigned."""
-    # Multi-period stats for trend analysis
-    s7 = jira.get_engineer_performance_stats(days=7)
-    s30 = jira.get_engineer_performance_stats(days=30)
-    s90 = jira.get_engineer_performance_stats(days=90)
-    by_name = {}
-    for e in s7.get("engineers", []):
-        if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
-            continue
-        by_name[e["name"]] = {"name": e["name"], "closed_7d": e["closed_count"], "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
-    for e in s30.get("engineers", []):
-        if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
-            continue
-        if e["name"] not in by_name:
-            by_name[e["name"]] = {"name": e["name"], "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
-        by_name[e["name"]]["closed_30d"] = e["closed_count"]
-        by_name[e["name"]]["avg_days_to_resolve"] = e.get("avg_days_to_resolve")
-    for e in s90.get("engineers", []):
-        if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
-            continue
-        if e["name"] not in by_name:
-            by_name[e["name"]] = {"name": e["name"], "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
-        by_name[e["name"]]["closed_90d"] = e["closed_count"]
-    # Open counts (tickets + projects)
-    projects = db.all_projects()
-    tickets = jira.get_grooming_tickets(max_results=200)
-    open_by_assignee = {}
-    for t in tickets:
-        assignee = (t.get("assignee") or "").strip()
-        if assignee and assignee.lower() not in ("unassigned", "—", ""):
-            open_by_assignee[assignee] = open_by_assignee.get(assignee, 0) + 1
-    for p in projects:
-        owner = (p.get("owner_name") or "").strip()
-        if owner and owner.lower() not in ("unassigned", "—", ""):
-            open_by_assignee[owner] = open_by_assignee.get(owner, 0) + 1
-    for name in list(open_by_assignee.keys()):
-        if name not in by_name and open_by_assignee[name] > 0:
-            by_name[name] = {"name": name, "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
-    engineers = list(by_name.values())
-    for e in engineers:
-        e["open_count"] = open_by_assignee.get(e["name"], 0)
-    stats = {"engineers": engineers, "periods": {"7d": 7, "30d": 30, "90d": 90}}
-    analysis = ai.analyze_engineer_performance(stats)
-    return jsonify({"analysis": analysis, "periods": stats["periods"]})
+    try:
+        # Multi-period stats for trend analysis
+        s7 = jira.get_engineer_performance_stats(days=7)
+        s30 = jira.get_engineer_performance_stats(days=30)
+        s90 = jira.get_engineer_performance_stats(days=90)
+        by_name = {}
+        for e in s7.get("engineers", []):
+            if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
+                continue
+            by_name[e["name"]] = {"name": e["name"], "closed_7d": e["closed_count"], "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+        for e in s30.get("engineers", []):
+            if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
+                continue
+            if e["name"] not in by_name:
+                by_name[e["name"]] = {"name": e["name"], "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+            by_name[e["name"]]["closed_30d"] = e["closed_count"]
+            by_name[e["name"]]["avg_days_to_resolve"] = e.get("avg_days_to_resolve")
+        for e in s90.get("engineers", []):
+            if (e.get("name") or "").strip().lower() in ("unassigned", "—", ""):
+                continue
+            if e["name"] not in by_name:
+                by_name[e["name"]] = {"name": e["name"], "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+            by_name[e["name"]]["closed_90d"] = e["closed_count"]
+        # Open counts (tickets + projects)
+        projects = db.all_projects()
+        tickets = jira.get_grooming_tickets(max_results=200)
+        open_by_assignee = {}
+        for t in tickets:
+            assignee = (t.get("assignee") or "").strip()
+            if assignee and assignee.lower() not in ("unassigned", "—", ""):
+                open_by_assignee[assignee] = open_by_assignee.get(assignee, 0) + 1
+        for p in projects:
+            owner = (p.get("owner_name") or "").strip()
+            if owner and owner.lower() not in ("unassigned", "—", ""):
+                open_by_assignee[owner] = open_by_assignee.get(owner, 0) + 1
+        for name in list(open_by_assignee.keys()):
+            if name not in by_name and open_by_assignee[name] > 0:
+                by_name[name] = {"name": name, "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
+        engineers = list(by_name.values())
+        for e in engineers:
+            e["open_count"] = open_by_assignee.get(e["name"], 0)
+        stats = {"engineers": engineers, "periods": {"7d": 7, "30d": 30, "90d": 90}}
+        analysis = ai.analyze_engineer_performance(stats)
+        return jsonify({"analysis": analysis, "periods": stats["periods"]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ── SERVE FRONTEND ────────────────────────────────────────────────────────────
