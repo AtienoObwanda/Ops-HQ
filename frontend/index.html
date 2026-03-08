@@ -918,12 +918,12 @@
       </div>
     </div>
 
-    <!-- PIPELINE (All Projects list first, then board by Jira status below) -->
+    <!-- PIPELINE (manual projects only; not linked to Jira) -->
     <div class="page" id="page-pipeline">
       <div class="page-header">
         <div>
           <div class="page-title">Project Pipeline</div>
-          <div class="page-sub">All active projects by stage. Stages from Jira statuses.</div>
+          <div class="page-sub">All active projects by stage. Add projects manually.</div>
         </div>
         <button class="btn-sm accent" onclick="openAddProject()">+ Add Project</button>
       </div>
@@ -1878,11 +1878,10 @@ async function generateClientUpdateForClient(cid) {
   nav("ai");
 }
 
-// ── PIPELINE (DB projects + Jira project tickets from grooming) ─────────────────
+// ── PIPELINE (manual DB projects only; not linked to Jira) ─────────────────────
 async function loadPipeline() {
-  const [projects, jiraData, clients] = await Promise.all([
+  const [projects, clients] = await Promise.all([
     api("GET", "/api/projects"),
-    api("GET", "/api/jira/pipeline-tickets"),
     api("GET", "/api/clients"),
   ]);
   if (!projects) return;
@@ -1890,10 +1889,7 @@ async function loadPipeline() {
   const stages = ["Discovery","Config","Integration","UAT","Go-Live","Hypercare"];
   const byStage = {};
   stages.forEach(s => byStage[s] = []);
-  projects.forEach(p => { if (byStage[p.stage]) byStage[p.stage].push({ type: "project", ...p }); });
-  (jiraData && jiraData.tickets || []).forEach(t => {
-    if (byStage[t.stage]) byStage[t.stage].push({ type: "jira", ...t });
-  });
+  projects.forEach(p => { if (byStage[p.stage]) byStage[p.stage].push(p); });
 
   document.getElementById("pipeline-board").innerHTML = stages.map(stage => `
     <div class="pipeline-col">
@@ -1901,21 +1897,13 @@ async function loadPipeline() {
         ${STAGE_EMOJI[stage]} ${stageDisplay(stage)}
         <span class="pipeline-count">${byStage[stage].length}</span>
       </div>
-      ${byStage[stage].map(item => {
-        if (item.type === "jira") {
-          return `<div class="pipeline-item pipeline-item-jira">
-            <a href="${item.url}" target="_blank" rel="noopener" class="jira-key" style="font-size:12px;margin-bottom:4px">${item.key}</a>
-            <div style="font-size:13px">${escapeHtml((item.summary || "").slice(0, 50))}${(item.summary || "").length > 50 ? "…" : ""}</div>
-            <div class="pipeline-item-owner">${item.assignee || "—"}</div>
-          </div>`;
-        }
-        const p = item;
-        return `<div class="pipeline-item" onclick="openProjectDetail(${p.id})">
-          <div>${p.client}</div>
-          <div class="pipeline-item-owner">${p.owner_name || "—"}${p.recon_name ? " · Recon: " + p.recon_name : ""}</div>
+      ${byStage[stage].map(p => `
+        <div class="pipeline-item" onclick="openProjectDetail(${p.id})">
+          <div>${escapeHtml(p.client)}</div>
+          <div class="pipeline-item-owner">${escapeHtml(p.owner_name || "—")}${p.recon_name ? " · Recon: " + escapeHtml(p.recon_name) : ""}</div>
           ${p.health !== "On Track" ? `<div style="margin-top:4px"><span class="tag tag-${HEALTH_COLORS[p.health]||'gray'}">${p.health}</span></div>` : ""}
-        </div>`;
-      }).join("")}
+        </div>
+      `).join("")}
     </div>
   `).join("");
 
@@ -1926,31 +1914,17 @@ async function loadPipeline() {
       clients.map(c => `<option value="${c.id}" data-name="${(c.name || "").replace(/"/g, "&quot;")}">${c.name}</option>`).join("");
   }
 
-  // Table: per client per issue name only (DB projects + Jira pipeline tickets)
-  const jiraTickets = (jiraData && jiraData.tickets) || [];
-  const hasProjects = projects.length > 0;
-  const hasJira = jiraTickets.length > 0;
-  let listHtml = "";
-  if (hasProjects) {
-    listHtml += projects.map(p => {
-      const name = (p.name || p.client || "").trim() || "—";
-      const client = (p.client || "").trim();
-      const line = client && name !== client ? `${client} — ${name}` : (client || name);
-      return `<div class="project-row" onclick="openProjectDetail(${p.id})" title="${escapeHtml(line)}">
+  // All Projects list: per client per issue name only (manual projects)
+  document.getElementById("project-list").innerHTML = projects.length
+    ? projects.map(p => {
+        const name = (p.name || p.client || "").trim() || "—";
+        const client = (p.client || "").trim();
+        const line = client && name !== client ? `${client} — ${name}` : (client || name);
+        return `<div class="project-row" onclick="openProjectDetail(${p.id})" title="${escapeHtml(line)}">
           <span class="project-client">${escapeHtml(line)}</span>
         </div>`;
-    }).join("");
-  }
-  if (hasJira) {
-    listHtml += jiraTickets.map(t => {
-      const line = (t.summary || t.key || "—").trim();
-      return `<div class="project-row project-row-jira">
-          <a href="${t.url || "#"}" target="_blank" rel="noopener" class="project-client" style="text-decoration:none;color:inherit">${escapeHtml(line)}</a>
-        </div>`;
-    }).join("");
-  }
-  document.getElementById("project-list").innerHTML = listHtml
-    || `<div class="empty-state">No projects yet. Click "+ Add Project" to start. Add Jira project keys in .env to see tickets in the pipeline.</div>`;
+      }).join("")
+    : `<div class="empty-state">No projects yet. Click "+ Add Project" to start.</div>`;
 }
 
 // ── TICKET GROOMING (Jira) ────────────────────────────────────────────────────
