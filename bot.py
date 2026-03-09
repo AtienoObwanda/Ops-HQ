@@ -20,6 +20,7 @@ Env vars required:
 import os
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -38,7 +39,9 @@ app = App(
     signing_secret=os.environ["SLACK_SIGNING_SECRET"],
 )
 
+# Where scheduled briefs/digest go: channel (CS_COMMAND_CHANNEL) or DM (CS_BRIEF_SLACK_USER_ID)
 COMMAND_CHANNEL = os.environ.get("CS_COMMAND_CHANNEL", "")
+BRIEF_DESTINATION = (COMMAND_CHANNEL or os.environ.get("CS_BRIEF_SLACK_USER_ID", "")).strip()
 BOT_DISPLAY_NAME = os.environ.get("BOT_DISPLAY_NAME", "Ops HQ").strip() or "Ops HQ"
 
 
@@ -227,7 +230,7 @@ def handle_assign(ack, respond, command, body):
     )
     respond(text="Assigned", blocks=[
         msg._section(f"👤 *{project['client']}* reassigned\n{old_owner} → <@{new_owner_slack}>"),
-        msg._context("They'll get 4pm check-in DMs from now on."),
+        msg._context("They'll get 5pm check-in DMs from now on."),
     ])
 
 
@@ -498,7 +501,7 @@ def _get_morning_brief_data():
 
 
 def send_morning_brief():
-    if not COMMAND_CHANNEL:
+    if not BRIEF_DESTINATION:
         return
     d = _get_morning_brief_data()
     blocks = msg.morning_brief(
@@ -508,18 +511,19 @@ def send_morning_brief():
         recently_completed=d["recently_completed"], open_issues=d["open_issues"],
         pending_do_first=d["pending_do_first"],
     )
-    _post_blocks(COMMAND_CHANNEL, blocks, text="☀️ CS Morning Brief")
-    print(f"✅ Morning brief posted")
+    _post_blocks(BRIEF_DESTINATION, blocks, text="☀️ CS Morning Brief")
+    print("✅ Morning brief posted")
 
 
 def send_engineer_checkins():
-    projects = db.all_projects()
-    if not projects:
+    raw = db.all_projects()
+    if not raw:
         return
+    projects = [dict(p) for p in raw]
     by_owner = {}
     for p in projects:
-        if p["owner_slack"]:
-            by_owner.setdefault(p["owner_slack"], {"name": p["owner_name"] or "there", "projects": []})
+        if p.get("owner_slack"):
+            by_owner.setdefault(p["owner_slack"], {"name": p.get("owner_name") or "there", "projects": []})
             by_owner[p["owner_slack"]]["projects"].append(p)
     for slack_id, data in by_owner.items():
         try:
@@ -531,7 +535,7 @@ def send_engineer_checkins():
 
 
 def send_weekly_digest():
-    if not COMMAND_CHANNEL:
+    if not BRIEF_DESTINATION:
         return
     try:
         patterns    = db.issue_patterns()
@@ -544,7 +548,7 @@ def send_weekly_digest():
             [dict(p) for p in stale],
             [dict(p) for p in at_risk],
         )
-        _post_blocks(COMMAND_CHANNEL, [
+        _post_blocks(BRIEF_DESTINATION, [
             msg._header("📊 Weekly Pattern Digest"),
             msg._section(digest),
             msg._divider(),
@@ -557,15 +561,24 @@ def send_weekly_digest():
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 
+# Schedule in EAT (Africa/Nairobi) so 5pm = 5pm EAT for engineer check-ins
+SCHEDULE_TZ = os.environ.get("SCHEDULE_TIMEZONE", "Africa/Nairobi")
+
 if __name__ == "__main__":
     db.init_db()
 
-    scheduler = BackgroundScheduler()
+    try:
+        tz = ZoneInfo(SCHEDULE_TZ)
+    except Exception as e:
+        print(f"⚠️ SCHEDULE_TIMEZONE={SCHEDULE_TZ} not available ({e}); using server local. Set TZ env or install tzdata if needed.")
+        tz = None  # fallback to server local (often UTC)
+    scheduler = BackgroundScheduler(timezone=tz)
     scheduler.add_job(send_morning_brief,     "cron", hour=9,  minute=0)
-    scheduler.add_job(send_engineer_checkins, "cron", hour=16, minute=0)
+    scheduler.add_job(send_engineer_checkins, "cron", hour=17, minute=0)  # 5pm EAT when tz=Africa/Nairobi
     scheduler.add_job(send_weekly_digest,     "cron", day_of_week="fri", hour=17, minute=0)
     scheduler.start()
-    print("⏰ Scheduler: briefs 9am · check-ins 4pm · digest Fridays 5pm")
+    tz_label = SCHEDULE_TZ if tz else "server local"
+    print(f"⏰ Scheduler ({tz_label}): briefs 9am · check-ins 5pm · digest Fri 5pm")
 
     print(f"🤖 {BOT_DISPLAY_NAME} Phase 2 starting...")
     handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])

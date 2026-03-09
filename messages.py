@@ -177,7 +177,7 @@ def morning_brief(stale, at_risk, all_projects, jira_data=None, all_with_done=No
 # ── ENGINEER CHECK-IN DM ──────────────────────────────────────────────────────
 
 def engineer_checkin_dm(engineer_name, projects):
-    """DM sent to engineer at 4pm asking for updates."""
+    """DM sent to engineer at 5pm asking for updates."""
     blocks = [
         _header("📬 Daily Project Check-in"),
         _section(
