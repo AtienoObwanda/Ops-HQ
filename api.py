@@ -1436,10 +1436,10 @@ def ai_product_scope():
         return jsonify({"error": str(e)}), 500
 
 
-# ── WEEKLY COO REPORT (leadership artifact) ────────────────────────────────────
+# ── WEEKLY Report (leadership artifact) ────────────────────────────────────
 
 def _weekly_coo_report_data():
-    """Build structured data for Weekly COO Report (used by GET and AI narrative)."""
+    """Build structured data for Weekly Report (used by GET and AI narrative)."""
     all_projects = db.all_projects(exclude_done=False)
     at_risk = db.at_risk_projects()
     issues = db.issue_patterns()
@@ -1477,14 +1477,14 @@ def _weekly_coo_report_data():
 @app.route("/api/reports/weekly-coo", methods=["GET"])
 @_require_auth()
 def get_weekly_coo_report():
-    """Structured data for the Weekly COO Report: summary, pipeline, risks, issues, risk heat, reflections."""
+    """Structured data for the Weekly Report: summary, pipeline, risks, issues, risk heat, reflections."""
     return jsonify(_weekly_coo_report_data())
 
 
 @app.route("/api/ai/coo-report", methods=["POST"])
 @_require_auth(roles=["admin"])
 def ai_coo_report():
-    """Generate narrative Weekly COO Report (one-pager for leadership)."""
+    """Generate narrative Weekly Report (one-pager for leadership)."""
     try:
         data = _weekly_coo_report_data()
         narrative = ai.generate_coo_report(data)
@@ -1561,7 +1561,7 @@ def delete_eisenhower_task(tid):
 @_require_auth()
 def team_workload():
     """Workload per engineer: DB projects (by owner) + Jira grooming tickets (by assignee). Populated from pipeline/grooming; engineers mapped via JIRA_TO_SLACK."""
-    projects = db.all_projects()
+    projects = [dict(p) for p in db.all_projects()]
     tickets = jira.get_grooming_tickets(max_results=150)
     engineers = {e["jira_name"]: e for e in jira.get_engineer_mapping()}
 
@@ -1656,7 +1656,7 @@ def ai_engineer_performance():
                 by_name[e["name"]] = {"name": e["name"], "closed_7d": 0, "closed_30d": 0, "closed_90d": 0, "avg_days_to_resolve": None}
             by_name[e["name"]]["closed_90d"] = e["closed_count"]
         # Open counts (tickets + projects)
-        projects = db.all_projects()
+        projects = [dict(p) for p in db.all_projects()]
         tickets = jira.get_grooming_tickets(max_results=200)
         open_by_assignee = {}
         for t in tickets:

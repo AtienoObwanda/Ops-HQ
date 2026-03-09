@@ -40,7 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Slack Bolt + Socket Mode; slash commands: `/project`, `/update`, `/stage`, `/risk`, `/resolve`, `/brief`, `/report`, `/issue`, `/issues`, `/help`
 - SQLite DB (projects, updates, issues, checkins)
 - Morning brief 9am; engineer check-ins 4pm (DM with On Track / At Risk / Blocked buttons)
-- COO report and open-issues view
+- Report and open-issues view
 
 ---
 

@@ -234,11 +234,11 @@ Write the monthly report now."""
     return _call(system, user, max_tokens=800)
 
 
-# ── WEEKLY COO REPORT (leadership one-pager) ───────────────────────────────────
+# ── WEEKLY Report (leadership one-pager) ───────────────────────────────────
 
 def generate_coo_report(weekly_data):
     """
-    Generate a narrative Weekly COO Report from structured data.
+    Generate a narrative Weekly Report from structured data.
     For the most visible leadership artifact: concise, scannable, one page.
     """
     summary = weekly_data.get("summary", {})
@@ -259,12 +259,12 @@ def generate_coo_report(weekly_data):
     heat_lines = "\n".join([f"- {p.get('client')} (score {p.get('risk_score')}, {p.get('risk_level')})" for p in risk_heat[:5]]) if risk_heat else "None."
     refl_lines = "\n".join([f"- {r.get('date')}: wins={r.get('wins') or '—'} | blockers={r.get('blockers') or '—'} | lessons={r.get('lessons') or '—'}" for r in reflections]) if reflections else "None."
 
-    system = """You are a delivery/CS lead writing the Weekly COO Report for leadership.
+    system = """You are a delivery/CS lead writing the Weekly Report for leadership.
 Write a concise, scannable one-pager. Use the data provided exactly — no invention.
 Structure: 1) One-paragraph executive summary (headline numbers + top risks). 2) Pipeline by stage (who is where). 3) Risks & blockers (who needs attention). 4) Recurring issues (patterns). 5) Proactive risk heat (projects to watch before they're flagged). 6) Week in review (reflections / wins and blockers).
 Tone: factual, confident. Keep under 350 words. This is the most visible artifact of delivery leadership."""
 
-    user = f"""WEEKLY COO REPORT DATA
+    user = f"""WEEKLY Report DATA
 
 Summary: {summary.get('active')} active, {summary.get('at_risk')} at risk, {summary.get('completed')} completed this cycle.
 
@@ -283,7 +283,7 @@ Proactive risk heat (watch list):
 Reflections this week (wins, blockers, lessons):
 {refl_lines}
 
-Write the weekly COO report now."""
+Write the weekly Report now."""
 
     return _call(system, user, max_tokens=600)
 

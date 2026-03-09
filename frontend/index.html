@@ -891,7 +891,7 @@
       <div class="sidebar-logo-tag">CS Ops</div>
       <div class="sidebar-logo-name">Command<br>Center</div>
     </div>
-    <div class="nav-item" onclick="nav('cooreport')" id="nav-cooreport" title="Weekly COO Report">📊 COO Report</div>
+    <div class="nav-item" onclick="nav('cooreport')" id="nav-cooreport" title="Weekly Report">📊 Report</div>
     <div class="nav-item" onclick="nav('salesintake')" id="nav-salesintake" title="Sales intake">📥 Sales intake</div>
     <div class="nav-item" onclick="nav('casestudies')" id="nav-casestudies" title="Case studies for SA promotion">📚 Case studies</div>
     <div class="nav-item active" onclick="nav('brief')" id="nav-brief">
@@ -1006,11 +1006,11 @@
       </div>
     </div>
 
-    <!-- WEEKLY COO REPORT -->
+    <!-- WEEKLY Report -->
     <div class="page" id="page-cooreport">
       <div class="page-header">
         <div>
-          <div class="page-title">Weekly COO Report</div>
+          <div class="page-title">Weekly Report</div>
           <div class="page-sub">Your most visible leadership artifact. One place to build and export — no more untracked time.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2058,7 +2058,7 @@ async function loadBrief() {
     : `<div class="empty-state">No projects yet</div>`;
 }
 
-// ── WEEKLY COO REPORT ─────────────────────────────────────────────────────────
+// ── WEEKLY Report ─────────────────────────────────────────────────────────
 async function loadCooReport() {
   const data = await api("GET", "/api/reports/weekly-coo");
   if (!data) return;
@@ -2112,7 +2112,7 @@ async function downloadCooReportPdf() {
     body = data?.report || "";
   }
   if (!body) { showToast("Generate narrative first or try again"); return; }
-  const title = "Weekly COO Report — " + new Date().toISOString().slice(0, 10);
+  const title = "Weekly Report — " + new Date().toISOString().slice(0, 10);
   const r = await fetch(`${API}/api/pdf`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (TOKEN || "") },

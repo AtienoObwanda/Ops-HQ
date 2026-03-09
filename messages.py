@@ -261,7 +261,7 @@ def project_detail(project, updates):
     return blocks
 
 
-# ── COO REPORT ────────────────────────────────────────────────────────────────
+# ── Report ────────────────────────────────────────────────────────────────
 
 def coo_report(all_projects, at_risk, issues_by_cat):
     today = datetime.now().strftime("%d %b %Y")
